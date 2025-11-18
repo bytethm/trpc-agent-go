@@ -138,6 +138,7 @@ func (p *FunctionCallResponseProcessor) handleFunctionCallsAndSendEvent(
 	tools map[string]tool.Tool,
 	eventChan chan<- *event.Event,
 ) (*event.Event, error) {
+
 	functionResponseEvent, err := p.handleFunctionCalls(
 		ctx,
 		invocation,
@@ -145,6 +146,7 @@ func (p *FunctionCallResponseProcessor) handleFunctionCallsAndSendEvent(
 		tools,
 		eventChan,
 	)
+
 	if err != nil {
 		log.Errorf("Function call handling failed for agent %s: %v", invocation.AgentName, err)
 		agent.EmitEvent(ctx, invocation, eventChan, event.NewErrorEvent(
@@ -206,9 +208,11 @@ func (p *FunctionCallResponseProcessor) executeSingleToolCallSequential(
 	_, span := trace.Tracer.Start(ctx, itelemetry.NewExecuteToolSpanName(toolCall.Function.Name))
 	defer span.End()
 	startTime := time.Now()
+
 	choice, modifiedArgs, shouldIgnoreError, err := p.executeToolCall(
 		ctx, invocation, toolCall, tools, index, eventChan,
 	)
+
 	if err != nil {
 		if shouldIgnoreError {
 			// Create error choice for ignorable errors

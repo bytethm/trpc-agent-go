@@ -113,22 +113,40 @@ func (p *OutputResponseProcessor) handleOutputKey(ctx context.Context, invocatio
 		return
 	}
 	result := content
+	var parsedJSON any
+
 	// If output_schema is present, ensure content is JSON.
 	if p.outputSchema != nil {
 		if jsonObject == "" {
 			return
 		}
-		var parsedJSON any
 		if err := json.Unmarshal([]byte(jsonObject), &parsedJSON); err != nil {
 			log.Warnf("Failed to parse output as JSON for output_schema validation: %v", err)
 			return
 		}
-		// Store the original JSON string.
+		// Store the parsed JSON object for nested field access (e.g., output_parsed.classification)
 		result = jsonObject
 	}
+
+	// Serialize the result for state delta
+	var resultBytes []byte
+	var err error
+
+	// If we have parsed JSON and output_schema is set, store as parsed object
+	// This enables nested field access in conditions (e.g., output_parsed.classification)
+	if p.outputSchema != nil && parsedJSON != nil {
+		resultBytes, err = json.Marshal(parsedJSON)
+		if err != nil {
+			log.Warnf("Failed to marshal parsed JSON: %v", err)
+			resultBytes = []byte(result)
+		}
+	} else {
+		resultBytes = []byte(result)
+	}
+
 	// Create a state delta event instead of directly modifying session.
 	stateDelta := map[string][]byte{
-		p.outputKey: []byte(result),
+		p.outputKey: resultBytes,
 	}
 	// Create and emit an event with state delta for the runner to process.
 	stateEvent := event.New(invocation.InvocationID, invocation.AgentName,
