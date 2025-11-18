@@ -471,15 +471,21 @@ func (si *SchemaInference) getReducer(reducerName string) graph.StateReducer {
 	}
 }
 
-// attachComponentContext enriches ParameterInfo with component-level information
-// that is not visible from pure type analysis, such as structured_output schemas.
-//
-// For now we only attach JSON schema for output_parsed when it comes from
-// builtin.llmagent with a structured_output config.
 func (si *SchemaInference) attachComponentContext(workflow *Workflow, paramMap map[string]*ParameterInfo) {
 	if workflow == nil {
 		return
 	}
+
+	// Build a quick index from node ID to node for later lookups.
+	nodeByID := make(map[string]Node, len(workflow.Nodes))
+	for _, node := range workflow.Nodes {
+		nodeByID[node.ID] = node
+	}
+
+	// Track builtin.llmagent nodes that actually configure structured_output so we can:
+	//   1) Attach JSONSchema for output_parsed.
+	//   2) Treat only those nodes as writers of output_parsed in usage metadata.
+	llmNodesWithStructuredOutput := make(map[string]map[string]any)
 
 	for _, node := range workflow.Nodes {
 		engine := node.EngineNode
@@ -500,14 +506,49 @@ func (si *SchemaInference) attachComponentContext(workflow *Workflow, paramMap m
 			continue
 		}
 
-		param, exists := paramMap["output_parsed"]
-		if !exists || param == nil {
-			continue
-		}
+		llmNodesWithStructuredOutput[node.ID] = schemaMap
+	}
 
-		// Attach JSON schema once; if multiple nodes contribute, we keep the first.
-		if param.JSONSchema == nil {
+	param, exists := paramMap["output_parsed"]
+	if !exists || param == nil {
+		return
+	}
+
+	// Attach JSON schema once; if multiple nodes contribute, we keep the first.
+	if param.JSONSchema == nil {
+		for _, schemaMap := range llmNodesWithStructuredOutput {
 			param.JSONSchema = schemaMap
+			break
 		}
 	}
+
+	// Refine writers for output_parsed:
+	// - Keep non-output sources (e.g., dsl:, code:) as-is.
+	// - For output:<nodeID> coming from builtin.llmagent, only keep nodes that
+	//   actually configure structured_output. This prevents nodes like
+	//   flight_agent / itinerary_agent (that reuse LLMAgent without structured_output)
+	//   from being listed as writers of output_parsed.
+	if len(param.Sources) == 0 {
+		return
+	}
+
+	filtered := make([]string, 0, len(param.Sources))
+	for _, src := range param.Sources {
+		if strings.HasPrefix(src, "output:") {
+			parts := strings.SplitN(src, ":", 2)
+			if len(parts) == 2 && parts[1] != "" {
+				nodeID := parts[1]
+				node, ok := nodeByID[nodeID]
+				if ok && node.EngineNode.Component.Type == "component" &&
+					node.EngineNode.Component.Ref == "builtin.llmagent" {
+					// For builtin.llmagent, only keep as writer when structured_output is configured.
+					if _, hasSO := llmNodesWithStructuredOutput[nodeID]; !hasSO {
+						continue
+					}
+				}
+			}
+		}
+		filtered = append(filtered, src)
+	}
+	param.Sources = filtered
 }
