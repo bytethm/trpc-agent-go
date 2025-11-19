@@ -29,8 +29,6 @@ func (c *PassthroughComponent) Metadata() registry.ComponentMetadata {
 		DisplayName: "Passthrough",
 		Description: "Pass state through unchanged",
 		Category:    "Utility",
-		Icon:        "arrow-right",
-		Color:       "#6B7280",
 		Version:     "1.0.0",
 
 		Inputs: []registry.ParameterSchema{

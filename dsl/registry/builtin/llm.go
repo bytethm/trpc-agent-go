@@ -34,10 +34,7 @@ func (c *LLMComponent) Metadata() registry.ComponentMetadata {
 		DisplayName: "LLM Model",
 		Description: "Call a Large Language Model with messages",
 		Category:    "LLM",
-		Icon:        "brain",
-		Color:       "#8B5CF6",
 		Version:     "2.0.0",
-
 		Inputs: []registry.ParameterSchema{
 			{
 				Name:        "messages",

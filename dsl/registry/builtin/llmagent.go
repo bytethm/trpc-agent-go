@@ -59,8 +59,6 @@ func (c *LLMAgentComponent) Metadata() registry.ComponentMetadata {
 		DisplayName: "LLM Agent",
 		Description: "Dynamically creates and executes an LLMAgent with configurable model, instruction, and tools",
 		Category:    "Agent",
-		Icon:        "🧠",
-		Color:       "#8B5CF6",
 		Version:     "1.0.0",
 		// LLMAgent does not consume additional named state inputs beyond the
 		// built-in graph fields (messages/user_input/session). Those are added

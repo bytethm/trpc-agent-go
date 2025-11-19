@@ -108,7 +108,7 @@ func run() error {
 
 	// Step 5: Test with different queries
 	testQueries := []string{
-		"I need to book a flight from Beijing to Shanghai next Monday",
+		"I need to book a flight from Beijing to Shanghai on 2025-12-16",
 		"Can you help me plan a 5-day trip to Japan?",
 		"What's the status of flight CA1234?",
 		"I want to create an itinerary for my vacation in Europe",

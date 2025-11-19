@@ -43,8 +43,6 @@ func (c *HTTPRequestComponent) Metadata() registry.ComponentMetadata {
 		DisplayName: "HTTP Request",
 		Description: "Perform an HTTP request with optional template-based config",
 		Category:    "Integration",
-		Icon:        "🌐",
-		Color:       "#0EA5E9",
 		Version:     "1.0.0",
 
 		// Logical inputs for documentation / schema purposes.

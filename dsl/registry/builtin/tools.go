@@ -33,8 +33,6 @@ func (c *ToolsComponent) Metadata() registry.ComponentMetadata {
 		DisplayName: "Tools Executor",
 		Description: "Executes tools called by LLM and returns results",
 		Category:    "Core",
-		Icon:        "🔧",
-		Color:       "#10B981",
 		Version:     "1.0.0",
 		Inputs: []registry.ParameterSchema{
 			{

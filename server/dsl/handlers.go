@@ -9,6 +9,22 @@ import (
 	"trpc.group/trpc-go/trpc-agent-go/dsl"
 )
 
+// ComponentUIHints provides optional presentation hints for builtin components.
+// This mapping lives in the HTTP layer to keep the DSL engine UI-agnostic.
+var builtinComponentUIHints = map[string]struct {
+	Icon  string
+	Color string
+}{
+	"builtin.llm":          {Icon: "brain", Color: "#8B5CF6"},
+	"builtin.llmagent":     {Icon: "🧠", Color: "#8B5CF6"},
+	"builtin.http_request": {Icon: "🌐", Color: "#0EA5E9"},
+	"builtin.tools":        {Icon: "🔧", Color: "#10B981"},
+	"builtin.function":     {Icon: "⚙️", Color: "#6366F1"},
+	"builtin.passthrough":  {Icon: "arrow-right", Color: "#6B7280"},
+	"builtin.agent":        {Icon: "🤖", Color: "#10B981"},
+	"builtin.code":         {Icon: "💻", Color: "#F59E0B"},
+}
+
 // ============================================================================
 // Component Registry Handlers
 // ============================================================================
@@ -19,7 +35,7 @@ func (s *Server) handleListComponents(w http.ResponseWriter, r *http.Request) {
 	category := r.URL.Query().Get("category")
 	search := r.URL.Query().Get("search")
 
-	// Get all component metadata
+	// Get all component metadata from the registry.
 	allMetadata := s.componentRegistry.ListMetadata()
 
 	// Filter results
@@ -40,7 +56,36 @@ func (s *Server) handleListComponents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		result = append(result, metadata)
+		// Extract optional UI hints: first from Meta (for app-specific components),
+		// then from builtinComponentUIHints (for builtin components).
+		var icon, color string
+		if metadata.Meta != nil {
+			if v, ok := metadata.Meta["icon"].(string); ok {
+				icon = v
+			}
+			if v, ok := metadata.Meta["color"].(string); ok {
+				color = v
+			}
+		}
+		if icon == "" && color == "" {
+			if hint, ok := builtinComponentUIHints[metadata.Name]; ok {
+				icon = hint.Icon
+				color = hint.Color
+			}
+		}
+
+		result = append(result, map[string]any{
+			"name":          metadata.Name,
+			"display_name":  metadata.DisplayName,
+			"description":   metadata.Description,
+			"category":      metadata.Category,
+			"icon":          icon,
+			"color":         color,
+			"version":       metadata.Version,
+			"inputs":        metadata.Inputs,
+			"outputs":       metadata.Outputs,
+			"config_schema": metadata.ConfigSchema,
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -72,13 +117,30 @@ func (s *Server) handleGetComponent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	metadata := component.Metadata()
+
+	var icon, color string
+	if metadata.Meta != nil {
+		if v, ok := metadata.Meta["icon"].(string); ok {
+			icon = v
+		}
+		if v, ok := metadata.Meta["color"].(string); ok {
+			color = v
+		}
+	}
+	if icon == "" && color == "" {
+		if hint, ok := builtinComponentUIHints[metadata.Name]; ok {
+			icon = hint.Icon
+			color = hint.Color
+		}
+	}
+
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"name":          name,
 		"display_name":  metadata.DisplayName,
 		"description":   metadata.Description,
 		"category":      metadata.Category,
-		"icon":          metadata.Icon,
-		"color":         metadata.Color,
+		"icon":          icon,
+		"color":         color,
 		"version":       metadata.Version,
 		"inputs":        metadata.Inputs,
 		"outputs":       metadata.Outputs,

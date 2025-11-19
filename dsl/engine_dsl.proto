@@ -141,12 +141,12 @@ message ComponentMetadata {
   string display_name = 2;
   string description = 3;
   string category = 4;
-  string icon = 5;
-  string color = 6;
-  string version = 7;
-  repeated ParameterSchema inputs = 8;
-  repeated ParameterSchema outputs = 9;
-  repeated ParameterSchema config_schema = 10;
+  string version = 5;
+  repeated ParameterSchema inputs = 6;
+  repeated ParameterSchema outputs = 7;
+  repeated ParameterSchema config_schema = 8;
+  // Optional engine-agnostic metadata for higher layers (e.g., editors).
+  map<string, Value> meta = 9;
 }
 
 // ParameterSchema defines the schema for an input, output, or config parameter.
@@ -195,4 +195,3 @@ message StructValue {
 enum NullValue {
   NULL_VALUE_UNSPECIFIED = 0;
 }
-

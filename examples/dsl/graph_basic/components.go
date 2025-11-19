@@ -41,8 +41,10 @@ func (c *PreprocessDocumentComponent) Metadata() registry.ComponentMetadata {
 		DisplayName: "Preprocess Document",
 		Description: "Preprocesses the input document and extracts metadata",
 		Category:    "Document Processing",
-		Icon:        "📄",
-		Color:       "#3B82F6",
+		Meta: map[string]any{
+			"icon":  "📄",
+			"color": "#3B82F6",
+		},
 		Version:     "1.0.0",
 		Inputs: []registry.ParameterSchema{
 			{
@@ -122,8 +124,10 @@ func (c *RouteComplexityComponent) Metadata() registry.ComponentMetadata {
 		DisplayName: "Route Complexity",
 		Description: "Prepares state for complexity-based routing",
 		Category:    "Document Processing",
-		Icon:        "🔀",
-		Color:       "#8B5CF6",
+		Meta: map[string]any{
+			"icon":  "🔀",
+			"color": "#8B5CF6",
+		},
 		Version:     "1.0.0",
 		Inputs: []registry.ParameterSchema{
 			{
@@ -258,8 +262,10 @@ func (c *ComplexityConditionComponent) Metadata() registry.ComponentMetadata {
 		DisplayName: "Complexity Condition",
 		Description: "Determines routing based on document complexity",
 		Category:    "Document Processing",
-		Icon:        "🎯",
-		Color:       "#F59E0B",
+		Meta: map[string]any{
+			"icon":  "🎯",
+			"color": "#F59E0B",
+		},
 		Version:     "1.0.0",
 		Inputs: []registry.ParameterSchema{
 			{
@@ -327,8 +333,10 @@ func (c *FormatOutputComponent) Metadata() registry.ComponentMetadata {
 		DisplayName: "Format Output",
 		Description: "Formats the final processing output",
 		Category:    "Document Processing",
-		Icon:        "📋",
-		Color:       "#10B981",
+		Meta: map[string]any{
+			"icon":  "📋",
+			"color": "#10B981",
+		},
 		Version:     "1.0.0",
 		Inputs: []registry.ParameterSchema{
 			{
@@ -407,8 +415,10 @@ func (c *AnalyzeComplexityToolComponent) Metadata() registry.ComponentMetadata {
 		DisplayName: "Analyze Complexity Tool",
 		Description: "Analyzes document complexity (used as a tool)",
 		Category:    "Document Processing",
-		Icon:        "🔍",
-		Color:       "#EF4444",
+		Meta: map[string]any{
+			"icon":  "🔍",
+			"color": "#EF4444",
+		},
 		Version:     "1.0.0",
 		Inputs: []registry.ParameterSchema{
 			{

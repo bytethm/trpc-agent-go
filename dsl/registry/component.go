@@ -31,9 +31,9 @@ type Component interface {
 
 // ComponentMetadata describes a component's interface and capabilities.
 // This metadata is used for:
-// 1. Frontend rendering (display name, icon, category)
-// 2. DSL validation (input/output schema validation)
-// 3. State schema inference (automatic schema generation)
+// 1. DSL validation (input/output schema validation)
+// 2. State schema inference (automatic schema generation)
+// 3. Optional higher-level tooling (e.g., HTTP layer, editors) via Meta.
 type ComponentMetadata struct {
 	// Name is the unique identifier for this component (e.g., "builtin.llm", "custom.processor")
 	Name string `json:"name"`
@@ -44,14 +44,8 @@ type ComponentMetadata struct {
 	// Description explains what this component does
 	Description string `json:"description"`
 
-	// Category groups components in the UI (e.g., "LLM", "Data Processing", "Integration")
+	// Category groups components logically (e.g., "LLM", "Data Processing", "Integration")
 	Category string `json:"category"`
-
-	// Icon is the icon identifier for UI rendering
-	Icon string `json:"icon,omitempty"`
-
-	// Color is the color code for UI rendering (e.g., "#4A90E2")
-	Color string `json:"color,omitempty"`
 
 	// Version is the component version (e.g., "1.0.0")
 	Version string `json:"version"`
@@ -64,6 +58,11 @@ type ComponentMetadata struct {
 
 	// ConfigSchema defines the configuration parameters for this component
 	ConfigSchema []ParameterSchema `json:"config_schema"`
+
+	// Meta holds optional, engine-agnostic metadata for higher layers.
+	// Typical usages include UI hints (e.g., icon/color), category tags,
+	// or other annotations that the engine itself does not interpret.
+	Meta map[string]any `json:"meta,omitempty"`
 }
 
 // ParameterSchema defines the schema for an input, output, or config parameter.

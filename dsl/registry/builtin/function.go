@@ -31,8 +31,6 @@ func (c *FunctionComponent) Metadata() registry.ComponentMetadata {
 		DisplayName: "Function Node",
 		Description: "Generic function node for custom business logic",
 		Category:    "Core",
-		Icon:        "⚙️",
-		Color:       "#6366F1",
 		Version:     "1.0.0",
 		Inputs: []registry.ParameterSchema{
 			{

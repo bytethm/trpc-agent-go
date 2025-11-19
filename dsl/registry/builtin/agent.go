@@ -55,8 +55,6 @@ func (c *AgentComponent) Metadata() registry.ComponentMetadata {
 		DisplayName: "Agent Node",
 		Description: "Invokes a sub-agent by name, enabling multi-agent composition",
 		Category:    "Agent",
-		Icon:        "🤖",
-		Color:       "#10B981",
 		Version:     "1.0.0",
 		// Agent node does not introduce additional named state inputs; it reads
 		// from the built-in graph state (messages/session). All parameters are

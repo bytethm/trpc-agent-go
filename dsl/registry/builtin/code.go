@@ -62,8 +62,6 @@ func (c *CodeComponent) Metadata() registry.ComponentMetadata {
 		DisplayName: "Code Executor",
 		Description: "Executes code in Python, JavaScript, or Bash with configurable isolation",
 		Category:    "Code",
-		Icon:        "💻",
-		Color:       "#F59E0B",
 		Version:     "1.0.0",
 		// Code executor does not consume named state inputs beyond the built-in
 		// graph fields, so Inputs can remain empty. All parameters are provided
