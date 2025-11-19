@@ -10,12 +10,12 @@
   },
   "servers": [
     {
-      "url": "http://localhost:8080",
+      "url": "http://localhost:8090",
       "description": "Local development server"
     },
     {
-      "url": "http://localhost:8080/api/v1",
-      "description": "API v1 endpoint"
+      "url": "http://localhost:8090",
+      "description": "API v1 endpoint (prefix /api/v1)"
     }
   ],
   "tags": [
@@ -328,6 +328,66 @@
         }
       }
     },
+    "/api/v1/workflows/schema": {
+      "post": {
+        "tags": ["validation"],
+        "summary": "Infer workflow state schema",
+        "description": "Infers state fields and usage (readers/writers) for a given workflow (view DSL). Intended for editor variable suggestions.",
+        "operationId": "getWorkflowSchema",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Workflow"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Inferred state fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowSchemaResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/vars": {
+      "post": {
+        "tags": ["validation"],
+        "summary": "List per-node variables for a workflow",
+        "description": "Returns variables produced by each node (name/type/kind/json_schema) for editor variable pickers.",
+        "operationId": "getWorkflowVars",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Workflow"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-node variable view",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowVarsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/workflows/{id}/compile": {
       "post": {
         "tags": ["workflows"],
@@ -443,16 +503,29 @@
     "schemas": {
       "ComponentMetadata": {
         "type": "object",
+        "description": "Component metadata including config schema and state IO.",
         "properties": {
           "name": {
             "type": "string",
             "example": "builtin.llmagent"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Human-readable component name"
           },
           "description": {
             "type": "string"
           },
           "category": {
             "type": "string"
+          },
+          "icon": {
+            "type": "string",
+            "description": "Icon identifier or emoji"
+          },
+          "color": {
+            "type": "string",
+            "description": "Hex color used for UI representation"
           },
           "version": {
             "type": "string"
@@ -468,25 +541,59 @@
             "items": {
               "$ref": "#/components/schemas/ParameterMetadata"
             }
+          },
+          "config_schema": {
+            "type": "array",
+            "description": "Schema for node.config parameters",
+            "items": {
+              "$ref": "#/components/schemas/ParameterMetadata"
+            }
           }
         }
       },
       "ParameterMetadata": {
         "type": "object",
+        "description": "Parameter schema used for inputs, outputs, and config.",
         "properties": {
           "name": {
             "type": "string"
           },
-          "type": {
+          "display_name": {
             "type": "string"
           },
           "description": {
             "type": "string"
           },
+          "type": {
+            "type": "string",
+            "description": "Go type or logical type string"
+          },
+          "type_id": {
+            "type": "string",
+            "description": "Logical DSL type identifier (e.g., string, number, graph.messages)"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Coarse-grained kind for editors: string | number | boolean | object | array | opaque"
+          },
           "required": {
             "type": "boolean"
           },
-          "default": {}
+          "default": {
+            "description": "Default value if not provided"
+          },
+          "enum": {
+            "type": "array",
+            "items": {}
+          },
+          "placeholder": {
+            "type": "string"
+          },
+          "json_schema": {
+            "type": "object",
+            "description": "Optional JSON Schema when this parameter is a structured object",
+            "additionalProperties": true
+          }
         }
       },
       "ToolMetadata": {
@@ -538,6 +645,97 @@
           },
           "finish_point": {
             "type": "string"
+          }
+        }
+      },
+      "FieldUsage": {
+        "type": "object",
+        "description": "Describes how a particular state field is used in the workflow.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "schema_ref": {
+            "type": "string"
+          },
+          "json_schema": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "writers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "readers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "WorkflowSchemaResponse": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldUsage"
+            }
+          }
+        }
+      },
+      "WorkflowVar": {
+        "type": "object",
+        "properties": {
+          "variable": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "json_schema": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "WorkflowVarsNode": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "vars": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowVar"
+            }
+          }
+        }
+      },
+      "WorkflowVarsResponse": {
+        "type": "object",
+        "properties": {
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowVarsNode"
+            }
           }
         }
       },
@@ -697,4 +895,3 @@
     }
   }
 }
-
