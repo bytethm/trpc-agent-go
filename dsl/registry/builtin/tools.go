@@ -51,9 +51,12 @@ func (c *ToolsComponent) Metadata() registry.ComponentMetadata {
 		ConfigSchema: []registry.ParameterSchema{
 			{
 				Name:        "tools",
-				Type:        "map[string]tool.Tool",
-				GoType:      reflect.TypeOf(map[string]any{}),
+				DisplayName: "Tools Map",
 				Description: "Map of tool name to tool instance (can be provided via state)",
+				Type:        "map[string]tool.Tool",
+				TypeID:      "object",
+				Kind:        "object",
+				GoType:      reflect.TypeOf(map[string]any{}),
 				Required:    false,
 			},
 		},

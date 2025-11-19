@@ -123,7 +123,9 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 
 	// Component registry
 	mux.HandleFunc("/api/v1/components", methodHandler("GET", s.handleListComponents))
-	mux.HandleFunc("/api/v1/components/{name}", methodHandler("GET", s.handleGetComponent))
+	// Single component metadata by name. We use a trailing slash pattern so this
+	// works consistently even on older Go versions without path variables.
+	mux.HandleFunc("/api/v1/components/", methodHandler("GET", s.handleGetComponent))
 
 	// Model registry
 	mux.HandleFunc("/api/v1/models", methodHandler("GET", s.handleListModels))

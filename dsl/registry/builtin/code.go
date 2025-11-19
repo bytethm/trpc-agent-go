@@ -65,50 +65,10 @@ func (c *CodeComponent) Metadata() registry.ComponentMetadata {
 		Icon:        "💻",
 		Color:       "#F59E0B",
 		Version:     "1.0.0",
-		Inputs: []registry.ParameterSchema{
-			{
-				Name:        "code",
-				Type:        "string",
-				GoType:      reflect.TypeOf(""),
-				Required:    true,
-				Description: "The code to execute",
-			},
-			{
-				Name:        "language",
-				Type:        "string",
-				GoType:      reflect.TypeOf(""),
-				Required:    true,
-				Description: "Programming language: python, javascript, or bash",
-			},
-			{
-				Name:        "executor_type",
-				Type:        "string",
-				GoType:      reflect.TypeOf(""),
-				Required:    false,
-				Description: "Execution mode: local or container (default: local)",
-			},
-			{
-				Name:        "timeout",
-				Type:        "int",
-				GoType:      reflect.TypeOf(0),
-				Required:    false,
-				Description: "Execution timeout in seconds (default: 30)",
-			},
-			{
-				Name:        "work_dir",
-				Type:        "string",
-				GoType:      reflect.TypeOf(""),
-				Required:    false,
-				Description: "Working directory for code execution",
-			},
-			{
-				Name:        "clean_temp_files",
-				Type:        "bool",
-				GoType:      reflect.TypeOf(false),
-				Required:    false,
-				Description: "Whether to clean temporary files after execution (default: true)",
-			},
-		},
+		// Code executor does not consume named state inputs beyond the built-in
+		// graph fields, so Inputs can remain empty. All parameters are provided
+		// via config.
+		Inputs: []registry.ParameterSchema{},
 		Outputs: []registry.ParameterSchema{
 			{
 				Name:        "output",
@@ -121,6 +81,73 @@ func (c *CodeComponent) Metadata() registry.ComponentMetadata {
 				Type:        "[]codeexecutor.File",
 				GoType:      reflect.TypeOf([]codeexecutor.File{}),
 				Description: "Files generated during code execution",
+			},
+		},
+		ConfigSchema: []registry.ParameterSchema{
+			{
+				Name:        "code",
+				DisplayName: "Code",
+				Description: "The code to execute",
+				Type:        "string",
+				TypeID:      "string",
+				Kind:        "string",
+				GoType:      reflect.TypeOf(""),
+				Required:    true,
+				Placeholder: "print('hello from code executor')",
+			},
+			{
+				Name:        "language",
+				DisplayName: "Language",
+				Description: "Programming language: python, javascript, or bash",
+				Type:        "string",
+				TypeID:      "string",
+				Kind:        "string",
+				GoType:      reflect.TypeOf(""),
+				Required:    true,
+				Placeholder: "python",
+			},
+			{
+				Name:        "executor_type",
+				DisplayName: "Executor Type",
+				Description: "Execution mode: local or container (default: local)",
+				Type:        "string",
+				TypeID:      "string",
+				Kind:        "string",
+				GoType:      reflect.TypeOf(""),
+				Required:    false,
+				Default:     "local",
+			},
+			{
+				Name:        "timeout",
+				DisplayName: "Timeout (seconds)",
+				Description: "Execution timeout in seconds (default: 30)",
+				Type:        "int",
+				TypeID:      "number",
+				Kind:        "number",
+				GoType:      reflect.TypeOf(0),
+				Required:    false,
+				Default:     30,
+			},
+			{
+				Name:        "work_dir",
+				DisplayName: "Working Directory",
+				Description: "Working directory for code execution",
+				Type:        "string",
+				TypeID:      "string",
+				Kind:        "string",
+				GoType:      reflect.TypeOf(""),
+				Required:    false,
+			},
+			{
+				Name:        "clean_temp_files",
+				DisplayName: "Clean Temporary Files",
+				Description: "Whether to clean temporary files after execution",
+				Type:        "bool",
+				TypeID:      "boolean",
+				Kind:        "boolean",
+				GoType:      reflect.TypeOf(false),
+				Required:    false,
+				Default:     true,
 			},
 		},
 	}
@@ -244,4 +271,3 @@ func (c *CodeComponent) Validate(config registry.ComponentConfig) error {
 
 	return nil
 }
-

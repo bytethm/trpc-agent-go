@@ -47,10 +47,14 @@ func (c *FunctionComponent) Metadata() registry.ComponentMetadata {
 		ConfigSchema: []registry.ParameterSchema{
 			{
 				Name:        "function",
-				Type:        "string",
-				GoType:      reflect.TypeOf(""),
+				DisplayName: "Function",
 				Description: "Reference to the registered function (e.g., 'custom.preprocess_document')",
+				Type:        "string",
+				TypeID:      "string",
+				Kind:        "string",
+				GoType:      reflect.TypeOf(""),
 				Required:    true,
+				Placeholder: "custom.preprocess_document",
 			},
 		},
 	}

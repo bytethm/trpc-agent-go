@@ -58,29 +58,10 @@ func (c *AgentComponent) Metadata() registry.ComponentMetadata {
 		Icon:        "🤖",
 		Color:       "#10B981",
 		Version:     "1.0.0",
-		Inputs: []registry.ParameterSchema{
-			{
-				Name:        "agent_name",
-				Type:        "string",
-				GoType:      reflect.TypeOf(""),
-				Required:    true,
-				Description: "Name of the sub-agent to invoke (must be registered in parent GraphAgent)",
-			},
-			{
-				Name:        "isolate_messages",
-				Type:        "bool",
-				GoType:      reflect.TypeOf(false),
-				Required:    false,
-				Description: "Whether to isolate subgraph from parent session messages (default: false)",
-			},
-			{
-				Name:        "event_scope",
-				Type:        "string",
-				GoType:      reflect.TypeOf(""),
-				Required:    false,
-				Description: "Event scope segment for subgraph events (empty disables scoping)",
-			},
-		},
+		// Agent node does not introduce additional named state inputs; it reads
+		// from the built-in graph state (messages/session). All parameters are
+		// provided via config.
+		Inputs: []registry.ParameterSchema{},
 		Outputs: []registry.ParameterSchema{
 			{
 				Name:        graph.StateKeyLastResponse,
@@ -94,6 +75,41 @@ func (c *AgentComponent) Metadata() registry.ComponentMetadata {
 				GoType:      reflect.TypeOf(map[string]any{}),
 				Description: "Node responses from the sub-agent execution",
 				Reducer:     "merge",
+			},
+		},
+		ConfigSchema: []registry.ParameterSchema{
+			{
+				Name:        "agent_name",
+				DisplayName: "Agent Name",
+				Description: "Name of the sub-agent to invoke (must be registered in parent GraphAgent)",
+				Type:        "string",
+				TypeID:      "string",
+				Kind:        "string",
+				GoType:      reflect.TypeOf(""),
+				Required:    true,
+				Placeholder: "technical_support_agent",
+			},
+			{
+				Name:        "isolate_messages",
+				DisplayName: "Isolate Messages",
+				Description: "Whether to isolate subgraph from parent session messages",
+				Type:        "bool",
+				TypeID:      "boolean",
+				Kind:        "boolean",
+				GoType:      reflect.TypeOf(false),
+				Required:    false,
+				Default:     false,
+			},
+			{
+				Name:        "event_scope",
+				DisplayName: "Event Scope",
+				Description: "Event scope segment for subgraph events (empty disables scoping)",
+				Type:        "string",
+				TypeID:      "string",
+				Kind:        "string",
+				GoType:      reflect.TypeOf(""),
+				Required:    false,
+				Placeholder: "support_flow",
 			},
 		},
 	}

@@ -50,7 +50,20 @@ func (s *Server) handleListComponents(w http.ResponseWriter, r *http.Request) {
 
 // handleGetComponent gets a specific component by name.
 func (s *Server) handleGetComponent(w http.ResponseWriter, r *http.Request) {
+	// Prefer Go 1.22+ path variables when available.
 	name := r.PathValue("name")
+	if name == "" {
+		// Fallback for older mux patterns: extract the component name from the path.
+		// Expected paths:
+		//   - /api/v1/components/{name}
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/components/")
+		// If nothing left or still contains a slash, treat as invalid.
+		if path == "" || strings.Contains(path, "/") {
+			respondError(w, http.StatusBadRequest, "component name is required")
+			return
+		}
+		name = path
+	}
 
 	component, exists := s.componentRegistry.Get(name)
 	if !exists {
@@ -60,12 +73,16 @@ func (s *Server) handleGetComponent(w http.ResponseWriter, r *http.Request) {
 
 	metadata := component.Metadata()
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"name":        name,
-		"description": metadata.Description,
-		"category":    metadata.Category,
-		"version":     metadata.Version,
-		"inputs":      metadata.Inputs,
-		"outputs":     metadata.Outputs,
+		"name":          name,
+		"display_name":  metadata.DisplayName,
+		"description":   metadata.Description,
+		"category":      metadata.Category,
+		"icon":          metadata.Icon,
+		"color":         metadata.Color,
+		"version":       metadata.Version,
+		"inputs":        metadata.Inputs,
+		"outputs":       metadata.Outputs,
+		"config_schema": metadata.ConfigSchema,
 	})
 }
 
