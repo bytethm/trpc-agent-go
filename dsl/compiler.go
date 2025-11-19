@@ -1009,29 +1009,29 @@ func (c *Compiler) createLLMAgentNodeFunc(node Node) (graph.NodeFunc, error) {
 					}
 				}
 
-				// If structured_output is configured, watch for the state delta
-				// emitted by OutputResponseProcessor via output_key. This carries
-				// the parsed JSON object that we want to expose in graph.State as
-				// "output_parsed" so conditional edges can read nested fields
-				// like output_parsed.classification.
-				if len(structuredOutput) > 0 && ev.StateDelta != nil {
-					if data, ok := ev.StateDelta["output_parsed"]; ok && len(data) > 0 {
-						var parsed any
-						if err := json.Unmarshal(data, &parsed); err != nil {
-							log.Warnf("Failed to unmarshal output_parsed state delta: %v", err)
-						} else {
-							outputParsed = parsed
-							hasOutputParsed = true
-						}
-					}
-				}
-
 			case <-timeout.C:
 				return nil, fmt.Errorf("timeout waiting for LLM agent to complete")
 			}
 		}
 
 	done:
+
+		// If structured_output is configured, extract the structured JSON
+		// content from the final lastResponse text and expose it as
+		// output_parsed in graph.State. This keeps all structured_output
+		// handling at the DSL layer without depending on internal flow
+		// processor details.
+		if len(structuredOutput) > 0 && !hasOutputParsed && lastResponse != "" {
+			if jsonText, ok := extractFirstJSONObjectFromText(lastResponse); ok {
+				var parsed any
+				if err := json.Unmarshal([]byte(jsonText), &parsed); err != nil {
+					log.Warnf("Failed to parse structured_output JSON from lastResponse: %v", err)
+				} else {
+					outputParsed = parsed
+					hasOutputParsed = true
+				}
+			}
+		}
 
 		// Build the state delta returned to the graph executor.
 		// We explicitly expose:
@@ -1148,4 +1148,73 @@ func (c *Compiler) createMCPToolSet(config map[string]interface{}) (tool.ToolSet
 	// Create and return the MCP ToolSet
 	toolSet := mcp.NewMCPToolSet(connConfig, mcpOpts...)
 	return toolSet, nil
+}
+
+// extractFirstJSONObjectFromText tries to extract the first balanced top-level
+// JSON object or array from the given text. This mirrors the behavior of the
+// internal flow processor's extraction logic but keeps the dependency entirely
+// within the DSL layer.
+func extractFirstJSONObjectFromText(s string) (string, bool) {
+	start := findJSONStartInText(s)
+	if start == -1 {
+		return "", false
+	}
+	return scanBalancedJSONInText(s, start)
+}
+
+// findJSONStartInText finds the index of the first opening brace/bracket.
+func findJSONStartInText(s string) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == '{' || s[i] == '[' {
+			return i
+		}
+	}
+	return -1
+}
+
+// scanBalancedJSONInText scans for a balanced JSON object/array starting at start.
+func scanBalancedJSONInText(s string, start int) (string, bool) {
+	stack := make([]byte, 0, 8)
+	inString := false
+	escaped := false
+
+	for i := start; i < len(s); i++ {
+		c := s[i]
+
+		if escaped {
+			escaped = false
+			continue
+		}
+
+		if inString {
+			switch c {
+			case '\\':
+				escaped = true
+			case '"':
+				inString = false
+			}
+			continue
+		}
+
+		switch c {
+		case '"':
+			inString = true
+		case '{', '[':
+			stack = append(stack, c)
+		case '}', ']':
+			if len(stack) == 0 {
+				return "", false
+			}
+			top := stack[len(stack)-1]
+			if (top == '{' && c == '}') || (top == '[' && c == ']') {
+				stack = stack[:len(stack)-1]
+				if len(stack) == 0 {
+					return s[start : i+1], true
+				}
+			} else {
+				return "", false
+			}
+		}
+	}
+	return "", false
 }
