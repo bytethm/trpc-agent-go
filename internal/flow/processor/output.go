@@ -126,7 +126,6 @@ func (p *OutputResponseProcessor) handleOutputKey(ctx context.Context, invocatio
 		// Store the original JSON string.
 		result = jsonObject
 	}
-
 	// Create a state delta event instead of directly modifying session.
 	stateDelta := map[string][]byte{
 		p.outputKey: []byte(result),

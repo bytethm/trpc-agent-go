@@ -1,3 +1,10 @@
+//
+// Tencent is pleased to support the open source community by making trpc-agent-go available.
+//
+// Copyright (C) 2025 Tencent.  All rights reserved.
+//
+// trpc-agent-go is licensed under the Apache License Version 2.0.
+//
 // Package dsl provides the DSL (Domain-Specific Language) for defining workflows.
 // It allows users to define workflows in JSON format that can be compiled into
 // executable trpc-agent-go StateGraphs.
