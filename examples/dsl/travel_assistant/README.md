@@ -108,42 +108,47 @@ This example uses **ONLY** builtin components:
 
 ### 🔀 Conditional Routing with Direct Field Access
 
-The routing logic uses a `builtin` condition with **direct field access**:
+The routing logic uses a `builtin` condition with **ordered cases** and direct field access. 在 DSL 层你只需要写人类友好的表达式，底层会自动映射到 per‑node 的结构化输出缓存：
 
 ```json
 {
   "type": "builtin",
-  "builtin": {
-    "conditions": [
-      {
-        "variable": "output_parsed.classification",
-        "operator": "==",
-        "value": "flight_info"
-      }
-    ]
-  },
-  "routes": {
-    "true": "flight_agent",
-    "false": "itinerary_agent"
-  }
+  "cases": [
+    {
+      "name": "flight_info",
+      "condition": {
+        "conditions": [
+          {
+            "variable": "input.output_parsed.classification",
+            "operator": "==",
+            "value": "flight_info"
+          }
+        ]
+      },
+      "target": "flight_agent"
+    }
+  ],
+  "default": "itinerary_agent"
 }
 ```
 
 **How it works**:
-1. Classifier outputs structured JSON: `{"classification": "flight_info", "confidence": 0.95, ...}`
-2. Framework automatically parses JSON and stores in `output_parsed` field
-3. Condition directly accesses `output_parsed.classification` using dot notation
+1. Classifier 输出结构化 JSON：`{"classification": "flight_info", "confidence": 0.95, ...}`
+2. 引擎会把解析后的结果缓存到 per‑node 状态：
+   - `state["node_structured"]["classifier"].output_parsed = {...}`
+3. 条件里的变量 `input.output_parsed.classification` 在编译阶段会被重写为：
+   - `node_structured.classifier.output_parsed.classification`
 4. Type-safe comparison: `classification == "flight_info"`
-5. If true → route to Flight Agent, otherwise → route to Itinerary Agent
+5. Cases are evaluated in order; if the first case matches → route to Flight Agent; otherwise → route to Itinerary Agent via `default`
 
 **Key Innovation**:
 - ✅ **No string matching!** Direct field access like `output_parsed.classification`
 - ✅ **Type-safe** comparison using `==` operator
 - ✅ **Clean syntax** matching modern workflow UI tools
 
-### 📝 Structured Output with Automatic Parsing
+### 📝 Structured Output with Automatic Parsing (Per‑Node Cache)
 
-The classifier uses JSON schema to ensure consistent output, and the framework **automatically parses and stores** the result:
+The classifier uses JSON schema to ensure consistent output, and the framework **automatically parses and stores** the result into a per‑node cache rather than a single global field.
 
 ```json
 {
@@ -169,24 +174,27 @@ The classifier uses JSON schema to ensure consistent output, and the framework *
 **Automatic State Storage**:
 
 When `structured_output` is configured, the framework automatically:
-1. Sets `output_key` to `"output_parsed"`
-2. Parses the JSON response
-3. Stores the parsed object in state
+1. Parses the JSON response from the classifier
+2. Stores the parsed object under the classifier node in `node_structured`
 
-**Example State After Classifier**:
+**Example State After Classifier** (simplified):
 ```json
 {
-  "output_parsed": {
-    "classification": "flight_info",
-    "confidence": 0.95,
-    "reasoning": "User is asking about booking a flight"
+  "node_structured": {
+    "classifier": {
+      "output_parsed": {
+        "classification": "flight_info",
+        "confidence": 0.95,
+        "reasoning": "User is asking about booking a flight"
+      }
+    }
   },
   "last_response": "{\"classification\":\"flight_info\",...}",
   "messages": [...]
 }
 ```
 
-This enables direct field access in conditions: `output_parsed.classification`
+在 DSL 里你使用 `input.output_parsed.classification` 表达“直接上游节点的结构化输出”，编译器会根据条件边的 `from` 节点自动补上对应的 node id，做到“内部按节点缓存，外部保持简单语法”。如需引用非直接上游的节点，则使用 `nodes.<id>.output_parsed.xxx` 形式。
 
 ## 🛠️ Tools and ToolSets Overview
 
@@ -664,4 +672,3 @@ This would:
 ---
 
 **This example proves that you can build sophisticated multi-agent workflows using ONLY builtin components!** 🎉
-

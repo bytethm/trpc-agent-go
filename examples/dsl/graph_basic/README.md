@@ -200,7 +200,6 @@ graphAgent, err := graphagent.New("document-processor", compiledGraph,
 {
   "id": "analyze",
   "component": {
-    "type": "component",
     "ref": "builtin.llm"
   },
   "config": {
@@ -217,7 +216,6 @@ graphAgent, err := graphagent.New("document-processor", compiledGraph,
 {
   "id": "tools",
   "component": {
-    "type": "component",
     "ref": "builtin.tools"
   },
   "config": {
@@ -233,7 +231,6 @@ graphAgent, err := graphagent.New("document-processor", compiledGraph,
   "source": "route",
   "target": "summarize",
   "condition": {
-    "type": "component",
     "ref": "custom.complexity_condition"
   },
   "config": {
@@ -241,4 +238,3 @@ graphAgent, err := graphagent.New("document-processor", compiledGraph,
   }
 }
 ```
-

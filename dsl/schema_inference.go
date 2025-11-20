@@ -66,6 +66,81 @@ func (si *SchemaInference) addBuiltinFields(schema *graph.StateSchema) {
 		Reducer: graph.MergeReducer,
 		Default: func() any { return map[string]any{} },
 	})
+
+	// Add node_structured field (per-node structured outputs, e.g. LLMAgent
+	// structured_output or End node structured results). This is a DSL-level
+	// convention and is intentionally not exposed via FieldUsage; it is
+	// primarily used internally by conditions and templates.
+	schema.AddField("node_structured", graph.StateField{
+		Type:    reflect.TypeOf(map[string]any{}),
+		Reducer: graph.MergeReducer,
+		Default: func() any { return map[string]any{} },
+	})
+}
+
+// addDeclaredStateVariables adds workflow-declared state variables to the
+// schema (and optionally usage map). These declarations are the canonical
+// source for workflow-level variables such as those written by builtin.set_state.
+func (si *SchemaInference) addDeclaredStateVariables(
+	schema *graph.StateSchema,
+	workflow *Workflow,
+	usage map[string]FieldUsage,
+) {
+	if workflow == nil || len(workflow.StateVariables) == 0 {
+		return
+	}
+
+	for _, v := range workflow.StateVariables {
+		name := strings.TrimSpace(v.Name)
+		if name == "" {
+			continue
+		}
+
+		goType, kind := goTypeForStateVariableKind(v.Kind)
+		reducer := si.getReducer(v.Reducer)
+
+		// Only add to schema when there is no existing field definition. This
+		// lets component-derived schema stay authoritative when both exist.
+		if _, exists := schema.Fields[name]; !exists {
+			var defaultFunc func() any
+			if v.Default != nil {
+				defaultValue := v.Default
+				defaultFunc = func() any { return defaultValue }
+			}
+
+			schema.AddField(name, graph.StateField{
+				Type:     goType,
+				Reducer:  reducer,
+				Required: false,
+				Default:  defaultFunc,
+			})
+		}
+
+		if usage != nil {
+			fieldUsage, ok := usage[name]
+			if !ok {
+				fieldUsage = FieldUsage{
+					Name: name,
+					Type: goType.String(),
+					Kind: kind,
+				}
+			} else {
+				if fieldUsage.Type == "" {
+					fieldUsage.Type = goType.String()
+				}
+				if fieldUsage.Kind == "" {
+					fieldUsage.Kind = kind
+				}
+			}
+
+			// Attach JSONSchema if declared and not already present.
+			if fieldUsage.JSONSchema == nil && v.JSONSchema != nil {
+				fieldUsage.JSONSchema = v.JSONSchema
+			}
+
+			usage[name] = fieldUsage
+		}
+	}
 }
 
 // InferSchema infers the State Schema from a workflow (engine DSL).
@@ -81,6 +156,9 @@ func (si *SchemaInference) InferSchema(workflow *Workflow) (*graph.StateSchema, 
 
 	// Add framework built-in fields first
 	si.addBuiltinFields(schema)
+
+	// Add workflow-declared state variables.
+	si.addDeclaredStateVariables(schema, workflow, nil)
 
 	// Convert parameter map to StateSchema
 	for name, param := range paramMap {
@@ -171,6 +249,9 @@ func (si *SchemaInference) InferSchemaAndUsage(workflow *Workflow) (*graph.State
 		usage[name] = fieldUsage
 	}
 
+	// Enrich schema and usage with workflow-declared state variables.
+	si.addDeclaredStateVariables(schema, workflow, usage)
+
 	return schema, usage, nil
 }
 
@@ -182,27 +263,18 @@ func (si *SchemaInference) buildParameterMap(workflow *Workflow) (map[string]*Pa
 	for _, node := range workflow.Nodes {
 		engine := node.EngineNode
 
-		// Handle code components specially
-		if engine.Component.Type == "code" {
-			if err := si.addCodeComponentParameters(node, parameterMap); err != nil {
-				return nil, fmt.Errorf("node %s: %w", node.ID, err)
-			}
-			continue
-		}
-
 		// Get component metadata
-		component, exists := si.registry.Get(engine.Component.Ref)
+		component, exists := si.registry.Get(engine.NodeType)
 		if !exists {
-			// For builtin components (llm, tools), we don't have them in registry
-			// but we still need to process their DSL-level outputs
-			if engine.Component.Type == "component" && (engine.Component.Ref == "builtin.llm" || engine.Component.Ref == "builtin.tools") {
-				// Process DSL-level outputs for builtin components
+			// For builtin components not present in the registry, fall back to
+			// processing DSL-level outputs only.
+			if engine.NodeType == "builtin.llm" || engine.NodeType == "builtin.tools" {
 				if err := si.addDSLOutputs(node, parameterMap); err != nil {
 					return nil, fmt.Errorf("node %s: %w", node.ID, err)
 				}
 				continue
 			}
-			return nil, fmt.Errorf("node %s: component %s not found", node.ID, engine.Component.Ref)
+			return nil, fmt.Errorf("node %s: component %s not found", node.ID, engine.NodeType)
 		}
 
 		metadata := component.Metadata()
@@ -288,41 +360,6 @@ func (si *SchemaInference) addParameter(paramMap map[string]*ParameterInfo, para
 	}
 
 	existing.Sources = append(existing.Sources, source)
-	return nil
-}
-
-// addCodeComponentParameters adds parameters from code components.
-func (si *SchemaInference) addCodeComponentParameters(node Node, paramMap map[string]*ParameterInfo) error {
-	engine := node.EngineNode
-
-	if engine.Component.Code == nil {
-		return nil
-	}
-
-	// For code components, we infer string type for all inputs/outputs
-	// (actual type checking happens at runtime)
-	stringType := reflect.TypeOf("")
-
-	for _, inputName := range engine.Component.Code.Inputs {
-		param := registry.ParameterSchema{
-			Name:   inputName,
-			GoType: stringType,
-		}
-		if err := si.addParameter(paramMap, param, fmt.Sprintf("code:%s", node.ID)); err != nil {
-			return err
-		}
-	}
-
-	for _, outputName := range engine.Component.Code.Outputs {
-		param := registry.ParameterSchema{
-			Name:   outputName,
-			GoType: stringType,
-		}
-		if err := si.addParameter(paramMap, param, fmt.Sprintf("code:%s", node.ID)); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -446,6 +483,28 @@ func classifyGoType(t reflect.Type, fieldName string) (kind string, schemaRef st
 	}
 }
 
+// goTypeForStateVariableKind maps a StateVariable.Kind string to a Go
+// reflect.Type suitable for StateSchema. It is intentionally coarse-grained
+// and aligned with the "kind" vocabulary used by NodeIO.
+func goTypeForStateVariableKind(kind string) (reflect.Type, string) {
+	switch kind {
+	case "string":
+		return reflect.TypeOf(""), "string"
+	case "number":
+		// Use float64 as the generic number type for schema purposes.
+		return reflect.TypeOf(float64(0)), "number"
+	case "boolean":
+		return reflect.TypeOf(false), "boolean"
+	case "object":
+		return reflect.TypeOf(map[string]any{}), "object"
+	case "array":
+		return reflect.TypeOf([]any{}), "array"
+	default:
+		// Fallback to opaque string representation.
+		return reflect.TypeOf(""), "opaque"
+	}
+}
+
 
 // getReducer returns the appropriate StateReducer for a reducer name.
 // It first tries to resolve from the ReducerRegistry, then falls back to hardcoded built-in reducers.
@@ -489,6 +548,12 @@ func (si *SchemaInference) attachComponentContext(workflow *Workflow, paramMap m
 		nodeByID[node.ID] = node
 	}
 
+	si.attachLLMAgentStructuredOutput(workflow, paramMap, nodeByID)
+	si.attachEndStructuredOutput(workflow, paramMap, nodeByID)
+}
+
+// attachLLMAgentStructuredOutput enriches output_parsed usage with JSONSchema and precise writers.
+func (si *SchemaInference) attachLLMAgentStructuredOutput(workflow *Workflow, paramMap map[string]*ParameterInfo, nodeByID map[string]Node) {
 	// Track builtin.llmagent nodes that actually configure structured_output so we can:
 	//   1) Attach JSONSchema for output_parsed.
 	//   2) Treat only those nodes as writers of output_parsed in usage metadata.
@@ -498,7 +563,7 @@ func (si *SchemaInference) attachComponentContext(workflow *Workflow, paramMap m
 		engine := node.EngineNode
 
 		// We only care about builtin.llmagent here.
-		if engine.Component.Type != "component" || engine.Component.Ref != "builtin.llmagent" {
+		if engine.NodeType != "builtin.llmagent" {
 			continue
 		}
 
@@ -546,8 +611,7 @@ func (si *SchemaInference) attachComponentContext(workflow *Workflow, paramMap m
 			if len(parts) == 2 && parts[1] != "" {
 				nodeID := parts[1]
 				node, ok := nodeByID[nodeID]
-				if ok && node.EngineNode.Component.Type == "component" &&
-					node.EngineNode.Component.Ref == "builtin.llmagent" {
+				if ok && node.EngineNode.NodeType == "builtin.llmagent" {
 					// For builtin.llmagent, only keep as writer when structured_output is configured.
 					if _, hasSO := llmNodesWithStructuredOutput[nodeID]; !hasSO {
 						continue
@@ -558,4 +622,44 @@ func (si *SchemaInference) attachComponentContext(workflow *Workflow, paramMap m
 		filtered = append(filtered, src)
 	}
 	param.Sources = filtered
+}
+
+// attachEndStructuredOutput enriches end_structured_output usage when builtin.end declares an output_schema.
+func (si *SchemaInference) attachEndStructuredOutput(workflow *Workflow, paramMap map[string]*ParameterInfo, nodeByID map[string]Node) {
+	endNodesWithSchema := make(map[string]map[string]any)
+
+	for _, node := range workflow.Nodes {
+		engine := node.EngineNode
+		if engine.NodeType != "builtin.end" {
+			continue
+		}
+
+		rawSchema, ok := engine.Config["output_schema"]
+		if !ok {
+			continue
+		}
+		schemaMap, ok := rawSchema.(map[string]any)
+		if !ok {
+			continue
+		}
+		endNodesWithSchema[node.ID] = schemaMap
+	}
+
+	param, exists := paramMap["end_structured_output"]
+	if !exists || param == nil {
+		return
+	}
+
+	// Attach JSON schema for end_structured_output once (first End node wins).
+	if param.JSONSchema == nil {
+		for _, schemaMap := range endNodesWithSchema {
+			param.JSONSchema = schemaMap
+			break
+		}
+	}
+
+	// Refine writers: for builtin.end, if an End node does not declare output_schema,
+	// we still allow it to be a writer (schema-less), so we don't filter here.
+	// However, we keep this hook for future refinement if needed.
+	_ = nodeByID
 }

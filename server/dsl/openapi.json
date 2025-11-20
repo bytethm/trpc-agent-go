@@ -608,45 +608,7 @@
         }
       },
       "Workflow": {
-        "type": "object",
-        "description": "DSL workflow definition",
-        "required": ["name", "nodes", "edges", "entry_point"],
-        "properties": {
-          "version": {
-            "type": "string",
-            "default": "1.0"
-          },
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "nodes": {
-            "type": "array",
-            "items": {
-              "type": "object"
-            }
-          },
-          "edges": {
-            "type": "array",
-            "items": {
-              "type": "object"
-            }
-          },
-          "conditional_edges": {
-            "type": "array",
-            "items": {
-              "type": "object"
-            }
-          },
-          "entry_point": {
-            "type": "string"
-          },
-          "finish_point": {
-            "type": "string"
-          }
-        }
+        "$ref": "../../dsl/schema/engine_dsl.schema.json#/$defs/Workflow"
       },
       "FieldUsage": {
         "type": "object",

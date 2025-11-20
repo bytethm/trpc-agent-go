@@ -4,12 +4,15 @@
   "description": "Classifier routes between HTTP request and chat agent, demonstrating builtin.http_request and structured_output variables.",
   "nodes": [
     {
+      "id": "start",
+      "label": "Start",
+      "node_type": "builtin.start",
+      "config": {}
+    },
+    {
       "id": "classifier",
-      "name": "classifier",
-      "component": {
-        "type": "component",
-        "ref": "builtin.llmagent"
-      },
+      "label": "classifier",
+      "node_type": "builtin.llmagent",
       "config": {
         "model_name": "deepseek-chat",
         "instruction": "You are a routing assistant. Analyze the user's request and decide if it should be answered via an HTTP echo service or directly by chat.\n\nRouting rules:\n- If the user explicitly asks to call an HTTP endpoint, echo some text via HTTP, or inspect an HTTP response, classify as 'http'.\n- Otherwise classify as 'chat'.\n\nStructured output requirements:\n- Always set classification strictly to one of: 'http' or 'chat'.\n- When classification = 'http':\n  - Extract the SHORT exact text that should be echoed (for example, if the user says \\\"echo the text 'hello-http'\\\", then text_to_echo MUST be exactly \\\"hello-http\\\" without quotes or extra words).\n  - Put this short value into text_to_echo.\n- When classification = 'chat':\n  - Set text_to_echo to an empty string.\n\nOnly use the provided JSON schema fields; do not add extra keys.",
@@ -38,23 +41,17 @@
     },
     {
       "id": "http_request",
-      "name": "http_request",
-      "component": {
-        "type": "component",
-        "ref": "builtin.http_request"
-      },
+      "label": "http_request",
+      "node_type": "builtin.http_request",
       "config": {
         "method": "GET",
-        "url_template": "https://httpbin.org/get?cls={{state.output_parsed.classification}}&echo={{state.output_parsed.text_to_echo}}"
+        "url_template": "https://httpbin.org/get?cls={{nodes.classifier.output_parsed.classification}}&echo={{nodes.classifier.output_parsed.text_to_echo}}"
       }
     },
     {
       "id": "chat_agent",
-      "name": "chat_agent",
-      "component": {
-        "type": "component",
-        "ref": "builtin.llmagent"
-      },
+      "label": "chat_agent",
+      "node_type": "builtin.llmagent",
       "config": {
         "model_name": "deepseek-chat",
         "instruction": "You are a helpful chat assistant. Answer the user's question directly without calling external HTTP APIs.",
@@ -68,7 +65,7 @@
   "edges": [
     {
       "id": "edge_start_classifier",
-      "source": "__start__",
+      "source": "start",
       "target": "classifier"
     },
     {
@@ -88,22 +85,24 @@
       "from": "classifier",
       "condition": {
         "type": "builtin",
-        "builtin": {
-          "conditions": [
-            {
-              "variable": "output_parsed.classification",
-              "operator": "==",
-              "value": "http"
-            }
-          ]
-        },
-        "routes": {
-          "true": "http_request",
-          "false": "chat_agent"
-        }
+        "cases": [
+          {
+            "name": "http",
+            "condition": {
+              "conditions": [
+                {
+                  "variable": "input.output_parsed.classification",
+                  "operator": "==",
+                  "value": "http"
+                }
+              ]
+            },
+            "target": "http_request"
+          }
+        ],
+        "default": "chat_agent"
       }
     }
   ],
-  "entry_point": "classifier",
-  "finish_point": "__end__"
+  "entry_point": "start"
 }

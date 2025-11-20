@@ -46,7 +46,6 @@ This example workflow demonstrates:
 {
   "id": "python_analysis",
   "component": {
-    "type": "component",
     "ref": "builtin.code"
   },
   "config": {
@@ -212,4 +211,3 @@ Bash Version: 5.2.15
 - `examples/codeexecution/jupyter/` - Jupyter kernel execution
 - `examples/dsl/graph_fanout/` - Parallel task execution
 - `examples/dsl/graph_subagent/` - Multi-agent composition
-

@@ -1,0 +1,289 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/engine_dsl.schema.json",
+  "title": "Engine DSL Schema",
+  "description": "JSON Schema for the trpc-agent-go engine DSL (Workflow/Node/Edge/etc.).",
+  "type": "object",
+  "$defs": {
+    "Workflow": {
+      "type": "object",
+      "required": ["name", "nodes", "edges", "entry_point"],
+      "properties": {
+        "version": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "nodes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Node" }
+        },
+        "edges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Edge" }
+        },
+        "conditional_edges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConditionalEdge" }
+        },
+        "state_variables": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/StateVariable" }
+        },
+        "entry_point": { "type": "string" },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "Node": {
+      "type": "object",
+      "required": ["id", "node_type"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "node_type": {
+          "type": "string",
+          "description": "Component name in registry (e.g., builtin.llmagent)."
+        },
+        "node_version": {
+          "type": "string",
+          "description": "Optional component version."
+        },
+        "config": {
+          "type": "object",
+          "description": "Component-specific configuration for this node instance.",
+          "additionalProperties": true
+        },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "StateVariable": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": ["string", "number", "boolean", "object", "array", "opaque"]
+        },
+        "json_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "description": { "type": "string" },
+        "default": {},
+        "reducer": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "Edge": {
+      "type": "object",
+      "required": ["source", "target"],
+      "properties": {
+        "id": { "type": "string" },
+        "source": { "type": "string" },
+        "target": { "type": "string" },
+        "label": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "ConditionalEdge": {
+      "type": "object",
+      "required": ["from", "condition"],
+      "properties": {
+        "id": { "type": "string" },
+        "from": { "type": "string" },
+        "condition": { "$ref": "#/$defs/Condition" }
+      },
+      "additionalProperties": false
+    },
+    "Condition": {
+      "oneOf": [
+        { "$ref": "#/$defs/ConditionBuiltin" },
+        { "$ref": "#/$defs/ConditionFunction" },
+        { "$ref": "#/$defs/ConditionToolRouting" }
+      ]
+    },
+    "ConditionBuiltin": {
+      "type": "object",
+      "required": ["type", "cases"],
+      "properties": {
+        "type": {
+          "const": "builtin"
+        },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/BuiltinCase" }
+        },
+        "default": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "BuiltinCase": {
+      "type": "object",
+      "required": ["condition", "target"],
+      "properties": {
+        "name": { "type": "string" },
+        "condition": { "$ref": "#/$defs/CaseCondition" },
+        "target": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "ConditionFunction": {
+      "type": "object",
+      "required": ["type", "function", "routes"],
+      "properties": {
+        "type": {
+          "const": "function"
+        },
+        "function": { "type": "string" },
+        "routes": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "default": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "ConditionToolRouting": {
+      "type": "object",
+      "required": ["type", "tools_node", "fallback"],
+      "properties": {
+        "type": {
+          "const": "tool_routing"
+        },
+        "tools_node": { "type": "string" },
+        "fallback": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "CaseCondition": {
+      "type": "object",
+      "required": ["conditions"],
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConditionRule" }
+        },
+        "logical_operator": {
+          "type": "string",
+          "enum": ["and", "or"],
+          "default": "and"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ConditionRule": {
+      "type": "object",
+      "required": ["variable", "operator"],
+      "properties": {
+        "variable": { "type": "string" },
+        "operator": { "type": "string" },
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "ComponentMetadata": {
+      "type": "object",
+      "description": "Component metadata describing a reusable building block in the DSL (inputs, outputs, and config schema). Editors use this to render forms and variable pickers.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique component name (e.g., builtin.llmagent)."
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Human-readable name shown in editors."
+        },
+        "description": {
+          "type": "string",
+          "description": "What this component does."
+        },
+        "category": {
+          "type": "string",
+          "description": "Logical grouping for palette organization (e.g., LLM, Tools, Control)."
+        },
+        "version": {
+          "type": "string",
+          "description": "Component version string."
+        },
+        "inputs": {
+          "type": "array",
+          "description": "Input parameters consumed by this component. Editors use this to know which values a node of this type can read.",
+          "items": { "$ref": "#/$defs/ParameterSchema" }
+        },
+        "outputs": {
+          "type": "array",
+          "description": "State fields produced by this component. Editors use this to expose variables for downstream nodes.",
+          "items": { "$ref": "#/$defs/ParameterSchema" }
+        },
+        "config_schema": {
+          "type": "array",
+          "description": "Schema for node.config parameters specific to this component.",
+          "items": { "$ref": "#/$defs/ParameterSchema" }
+        },
+        "meta": {
+          "type": "object",
+          "description": "Optional engine-agnostic metadata for higher layers (UI hints, tags, etc.).",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "ParameterSchema": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Parameter name (e.g., messages, temperature, result)."
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Human-readable label shown in editors."
+        },
+        "description": {
+          "type": "string",
+          "description": "What this parameter represents."
+        },
+        "type_id": {
+          "type": "string",
+          "description": "Logical DSL type identifier for editors (e.g., string, number, graph.messages, llmagent.output_parsed)."
+        },
+        "kind": {
+          "type": "string",
+          "description": "Coarse-grained kind for editor UX. Typical values: string, number, boolean, object, array, opaque.",
+          "enum": ["string", "number", "boolean", "object", "array", "opaque"]
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether this parameter must be provided."
+        },
+        "default": {
+          "description": "Default value used when the parameter is omitted."
+        },
+        "enum": {
+          "type": "array",
+          "description": "Optional finite set of allowed values (for dropdowns).",
+          "items": {}
+        },
+        "placeholder": {
+          "type": "string",
+          "description": "Optional placeholder text for editor inputs."
+        },
+        "json_schema": {
+          "type": "object",
+          "description": "Optional JSON Schema when this parameter represents a structured object. Used by editors and introspection APIs.",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "workflow": { "$ref": "#/$defs/Workflow" }
+  }
+}

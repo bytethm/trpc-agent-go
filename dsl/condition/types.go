@@ -7,9 +7,10 @@
 //
 package condition
 
-// BuiltinCondition represents a structured condition configuration.
-// It contains multiple condition rules that are evaluated together using a logical operator.
-type BuiltinCondition struct {
+// CaseCondition represents a structured condition configuration for a single
+// builtin case. It contains multiple condition rules that are evaluated
+// together using a logical operator.
+type CaseCondition struct {
 	// Conditions is the list of condition rules to evaluate
 	Conditions []ConditionRule `json:"conditions"`
 

@@ -18,12 +18,19 @@ message Workflow {
   repeated ConditionalEdge conditional_edges = 6; // Conditional routing edges.
 
   string entry_point = 7;        // ID of starting node.
-  string finish_point = 8;       // Optional finish node ID.
 
-  map<string, Value> metadata = 9; // Optional workflow-level metadata.
+  map<string, Value> metadata = 8; // Optional workflow-level metadata.
+
+  // Declarative workflow-level state variables. These describe the shape and
+  // reducer behavior of global state that nodes may read/write.
+  repeated StateVariable state_variables = 9;
 }
 
 // Node represents an executable node in the engine DSL.
+// In the JSON Workflow DSL the engine fields are flattened so that
+// node_type / config / description appear directly under the node. The
+// EngineNode wrapper here is an engine-level structure used for internal
+// usage and for non-JSON transports.
 message Node {
   string id = 1;           // Unique node identifier.
   EngineNode engine = 2;   // Engine-level node definition.
@@ -31,28 +38,16 @@ message Node {
 
 // EngineNode contains execution semantics for a node.
 message EngineNode {
-  string name = 1;                       // Optional internal name (meta).
-  ComponentRef component = 2;            // Component reference.
-  map<string, Value> config = 3;         // Component-specific configuration.
-  repeated NodeIO inputs = 4;            // Optional explicit input mapping.
-  repeated NodeIO outputs = 5;           // Optional explicit output mapping.
-  string description = 6;                // Optional description (meta).
-}
-
-// ComponentRef references a registered component.
-message ComponentRef {
-  string type = 1;      // "component" or "code".
-  string ref = 2;       // Component name in registry (for type="component").
-  string version = 3;   // Optional component version.
-  CodeConfig code = 4;  // Inline code configuration (only for type="code").
-}
-
-// CodeConfig defines inline code execution configuration.
-message CodeConfig {
-  string language = 1;              // e.g., "python", "javascript".
-  string code = 2;                  // Source code.
-  repeated string inputs = 3;       // Input variable names from state.
-  repeated string outputs = 4;      // Output variable names to write to state.
+  string label = 1;                      // Optional human-readable label (meta).
+  string node_type = 2;                  // Component name in registry, e.g., "builtin.llmagent".
+  string node_version = 3;               // Optional component version string.
+  map<string, Value> config = 4;         // Component-specific configuration.
+  // Inputs/outputs are an advanced engine-level feature for explicit I/O
+  // mappings. They are not part of the public Workflow JSON schema and
+  // typical workflows omit them.
+  repeated NodeIO inputs = 5;            // Optional explicit input mapping (engine-only).
+  repeated NodeIO outputs = 6;           // Optional explicit output mapping (engine-only).
+  string description = 7;                // Optional description (meta).
 }
 
 // Edge represents a direct connection between two nodes.
@@ -72,28 +67,39 @@ message ConditionalEdge {
 
 // Condition defines the routing logic for conditional edges.
 message Condition {
-  string type = 1;                 // "builtin" | "function" | "tool_routing" | "expression".
-  string expression = 2;           // Optional expression string.
+  // Type selects the condition strategy:
+  // - "builtin": structured rules over state (CaseCondition) evaluated in cases.
+  // - "function": delegate routing to a function component.
+  // - "tool_routing": LLM tool-calls routing (AddToolsConditionalEdges pattern).
+  string type = 1;
 
-  // Builtin structured condition configuration (when type="builtin").
-  BuiltinCondition builtin = 3;
+  // Builtin cases (when type="builtin"). Evaluated in order; first match wins.
+  repeated BuiltinCase cases = 2;
 
   // Function-based routing (when type="function").
-  string function = 4;
+  string function = 3;
 
   // Tool routing configuration (when type="tool_routing").
-  string tools_node = 5;
-  string next = 6;
+  string tools_node = 4;
+  string fallback = 5;
 
-  // Routes map condition results to target node IDs.
-  map<string, string> routes = 7;
+  // Routes map condition results to target node IDs (for type="function").
+  map<string, string> routes = 6;
 
-  // Default route if no condition matches.
-  string default_route = 8;
+  // Default route if no condition matches (builtin/function).
+  string default_route = 7;
 }
 
-// BuiltinCondition groups multiple rules with a logical operator.
-message BuiltinCondition {
+// BuiltinCase represents a single builtin branch evaluated in order.
+message BuiltinCase {
+  string name = 1;              // Optional case label (meta).
+  CaseCondition condition = 2;
+  string target = 3;            // Target node ID when condition matches.
+}
+
+// CaseCondition groups multiple rules with a logical operator for a single
+// builtin case.
+message CaseCondition {
   repeated ConditionRule conditions = 1;
   string logical_operator = 2; // "and" | "or", default "and".
 }
@@ -106,6 +112,9 @@ message ConditionRule {
 }
 
 // NodeIO defines an input or output parameter mapping for a node.
+// NOTE: NodeIO is an engine-level concept. The public Workflow JSON schema
+// does not require editors to emit per-node NodeIO; instead, component I/O
+// comes from ComponentMetadata (inputs/outputs) and internal inference.
 message NodeIO {
   string name = 1;
   string type = 2;       // Historical Go type string (optional).
@@ -194,4 +203,14 @@ message StructValue {
 
 enum NullValue {
   NULL_VALUE_UNSPECIFIED = 0;
+}
+
+// StateVariable describes a workflow-level state variable.
+message StateVariable {
+  string name = 1;         // State field name, e.g., "greeting".
+  string kind = 2;         // "string" | "number" | "boolean" | "object" | "array" | "opaque".
+  map<string, Value> json_schema = 3; // Optional JSON Schema when structured.
+  Value default_value = 4; // Optional default value.
+  string description = 5;  // Optional description (meta).
+  string reducer = 6;      // Optional reducer function name; empty => default.
 }

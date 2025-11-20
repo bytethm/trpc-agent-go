@@ -1,16 +1,15 @@
-//
 // Tencent is pleased to support the open source community by making trpc-agent-go available.
 //
 // Copyright (C) 2025 Tencent.  All rights reserved.
 //
 // trpc-agent-go is licensed under the Apache License Version 2.0.
-//
 package dsl
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"trpc.group/trpc-go/trpc-agent-go/agent"
@@ -113,6 +112,19 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 		return nil, fmt.Errorf("workflow is nil")
 	}
 
+	// Detect builtin.start node (if present) so we can map it to the real
+	// graph entry point. There should be at most one such node.
+	var startNodeID string
+	var endNodeIDs []string
+	for _, node := range workflow.Nodes {
+		if node.EngineNode.NodeType == "builtin.start" {
+			startNodeID = node.ID
+		}
+		if node.EngineNode.NodeType == "builtin.end" {
+			endNodeIDs = append(endNodeIDs, node.ID)
+		}
+	}
+
 	// Step 1: Infer State Schema from components
 	schema, err := c.schemaInference.InferSchema(workflow)
 	if err != nil {
@@ -124,6 +136,13 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 
 	// Step 3: Add all nodes
 	for _, node := range workflow.Nodes {
+		// builtin.start is a structural DSL node and typically does not
+		// correspond to a real executable node in the StateGraph. The actual
+		// entry point will be derived from its outgoing edge below.
+		if node.EngineNode.NodeType == "builtin.start" {
+			continue
+		}
+
 		nodeFunc, err := c.createNodeFunc(node)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create node %s: %w", node.ID, err)
@@ -134,6 +153,20 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 
 	// Step 4: Add edges
 	for _, edge := range workflow.Edges {
+		// Skip edges originating from the builtin.start node; they are only
+		// used to determine the real graph entry point and are not needed in
+		// the executable graph.
+		if startNodeID != "" && edge.Source == startNodeID {
+			continue
+		}
+
+		// builtin.start is not added as a real node, so edges targeting it
+		// are not meaningful. They should already be rejected by validation,
+		// but we defensively skip them here.
+		if startNodeID != "" && edge.Target == startNodeID {
+			continue
+		}
+
 		stateGraph.AddEdge(edge.Source, edge.Target)
 	}
 
@@ -157,11 +190,21 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 	}
 
 	// Step 6: Set entry point
-	stateGraph.SetEntryPoint(workflow.EntryPoint)
+	if startNodeID != "" {
+		firstNodeID, err := resolveStartSuccessor(startNodeID, workflow.Edges)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve start node successor: %w", err)
+		}
+		stateGraph.SetEntryPoint(firstNodeID)
+	} else {
+		stateGraph.SetEntryPoint(workflow.EntryPoint)
+	}
 
-	// Step 7: Set finish point (if specified)
-	if workflow.FinishPoint != "" {
-		stateGraph.SetFinishPoint(workflow.FinishPoint)
+	// Step 7: Set finish points based on builtin.end nodes (if any). Each
+	// builtin.end node is treated as a graph finish node, mirroring the
+	// multi-ends pattern in the native graph API.
+	for _, endID := range endNodeIDs {
+		stateGraph.SetFinishPoint(endID)
 	}
 
 	// Step 8: Compile the graph
@@ -173,34 +216,58 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 	return compiledGraph, nil
 }
 
+// resolveStartSuccessor finds the unique successor of the builtin.start node
+// from the list of edges. It returns an error if there is no outgoing edge
+// or if multiple distinct successors are found.
+func resolveStartSuccessor(startNodeID string, edges []Edge) (string, error) {
+	var successor string
+	for _, edge := range edges {
+		if edge.Source != startNodeID {
+			continue
+		}
+		if successor == "" {
+			successor = edge.Target
+		} else if successor != edge.Target {
+			return "", fmt.Errorf("builtin.start node %s has multiple outgoing edges (%s, %s)", startNodeID, successor, edge.Target)
+		}
+	}
+
+	if successor == "" {
+		return "", fmt.Errorf("builtin.start node %s has no outgoing edge", startNodeID)
+	}
+
+	return successor, nil
+}
+
+
 // createNodeFunc creates a NodeFunc for an engine-level node instance.
 func (c *Compiler) createNodeFunc(node Node) (graph.NodeFunc, error) {
 	engine := node.EngineNode
 
-	// Handle code components
-	if engine.Component.Type == "code" {
-		return c.createCodeNodeFunc(node)
-	}
-
 	// Handle LLM components specially (use AddLLMNode pattern)
-	if engine.Component.Ref == "builtin.llm" {
+	if engine.NodeType == "builtin.llm" {
 		return c.createLLMNodeFunc(node)
 	}
 
 	// Handle Tools components specially (use AddToolsNode pattern)
-	if engine.Component.Ref == "builtin.tools" {
+	if engine.NodeType == "builtin.tools" {
 		return c.createToolsNodeFunc(node)
 	}
 
 	// Handle LLMAgent components specially (dynamically create LLMAgent)
-	if engine.Component.Ref == "builtin.llmagent" {
+	if engine.NodeType == "builtin.llmagent" {
 		return c.createLLMAgentNodeFunc(node)
 	}
 
+	// Handle UserApproval components specially (graph.Interrupt-based).
+	if engine.NodeType == "builtin.user_approval" {
+		return c.createUserApprovalNodeFunc(node)
+	}
+
 	// Get component from registry
-	component, exists := c.registry.Get(engine.Component.Ref)
+	component, exists := c.registry.Get(engine.NodeType)
 	if !exists {
-		return nil, fmt.Errorf("component %s not found in registry", engine.Component.Ref)
+		return nil, fmt.Errorf("component %s not found in registry", engine.NodeType)
 	}
 
 	// Create a closure that captures the component and config
@@ -210,7 +277,7 @@ func (c *Compiler) createNodeFunc(node Node) (graph.NodeFunc, error) {
 		// Execute the component
 		result, err := component.Execute(ctx, config, state)
 		if err != nil {
-			return nil, fmt.Errorf("component %s execution failed: %w", engine.Component.Ref, err)
+			return nil, fmt.Errorf("component %s execution failed: %w", engine.NodeType, err)
 		}
 
 		// Apply output mapping if specified in DSL
@@ -379,32 +446,13 @@ func (c *Compiler) createToolsNodeFunc(node Node) (graph.NodeFunc, error) {
 	return graph.NewToolsNodeFunc(tools), nil
 }
 
-// createCodeNodeFunc creates a NodeFunc for a code component.
-func (c *Compiler) createCodeNodeFunc(node Node) (graph.NodeFunc, error) {
-	engine := node.EngineNode
-
-	if engine.Component.Code == nil {
-		return nil, fmt.Errorf("code config is nil")
-	}
-
-	// TODO: Implement code executor integration
-	// For now, return a placeholder that returns an error
-	codeConfig := engine.Component.Code
-
-	return func(ctx context.Context, state graph.State) (interface{}, error) {
-		return nil, fmt.Errorf("code executor not yet implemented (language: %s)", codeConfig.Language)
-	}, nil
-}
-
 // createConditionalFunc creates a ConditionalFunc for a conditional edge.
 func (c *Compiler) createConditionalFunc(condEdge ConditionalEdge) (graph.ConditionalFunc, error) {
 	condition := condEdge.Condition
 
 	switch condition.Type {
 	case "builtin":
-		return c.createBuiltinCondition(condition)
-	case "expression":
-		return c.createExpressionCondition(condition)
+		return c.createBuiltinCondition(condEdge)
 	case "function":
 		return c.createFunctionCondition(condition)
 	default:
@@ -413,69 +461,58 @@ func (c *Compiler) createConditionalFunc(condEdge ConditionalEdge) (graph.Condit
 }
 
 // createBuiltinCondition creates a condition function from a builtin structured condition.
-func (c *Compiler) createBuiltinCondition(cond Condition) (graph.ConditionalFunc, error) {
-	if cond.Builtin == nil {
-		return nil, fmt.Errorf("builtin condition configuration is nil")
+func (c *Compiler) createBuiltinCondition(condEdge ConditionalEdge) (graph.ConditionalFunc, error) {
+	cond := condEdge.Condition
+
+	if len(cond.Cases) == 0 {
+		return nil, fmt.Errorf("builtin condition requires at least one case")
 	}
 
-	// Convert DSL BuiltinCondition to condition package type
-	builtinCond := &condition.BuiltinCondition{
-		Conditions:      make([]condition.ConditionRule, len(cond.Builtin.Conditions)),
-		LogicalOperator: cond.Builtin.LogicalOperator,
-	}
+	// Create a local copy of cases to avoid capturing a mutable slice from the caller.
+	cases := make([]BuiltinCase, len(cond.Cases))
+	copy(cases, cond.Cases)
 
-	for i, rule := range cond.Builtin.Conditions {
-		builtinCond.Conditions[i] = condition.ConditionRule{
-			Variable: rule.Variable,
-			Operator: rule.Operator,
-			Value:    rule.Value,
-		}
-	}
+	fromNodeID := condEdge.From
 
 	return func(ctx context.Context, state graph.State) (string, error) {
-		// Evaluate the builtin condition
-		result, err := condition.Evaluate(ctx, state, builtinCond)
-		if err != nil {
-			return "", fmt.Errorf("failed to evaluate builtin condition: %w", err)
-		}
-
-		// Map boolean result to route
-		routeKey := "false"
-		if result {
-			routeKey = "true"
-		}
-
-		// Look up the target node in routes
-		target, ok := cond.Routes[routeKey]
-		if !ok {
-			// If no route found, try default
-			if cond.Default != "" {
-				return cond.Default, nil
+		for idx, kase := range cases {
+			// Convert CaseCondition to condition.CaseCondition
+			if len(kase.Condition.Conditions) == 0 {
+				continue
 			}
-			return "", fmt.Errorf("no route found for result '%s' and no default specified", routeKey)
+
+			builtinCond := &condition.CaseCondition{
+				Conditions:      make([]condition.ConditionRule, len(kase.Condition.Conditions)),
+				LogicalOperator: kase.Condition.LogicalOperator,
+			}
+			for i, rule := range kase.Condition.Conditions {
+				normalizedVar := normalizeConditionVariable(rule.Variable, fromNodeID)
+				builtinCond.Conditions[i] = condition.ConditionRule{
+					Variable: normalizedVar,
+					Operator: rule.Operator,
+					Value:    rule.Value,
+				}
+			}
+
+			ok, err := condition.Evaluate(ctx, state, builtinCond)
+			if err != nil {
+				return "", fmt.Errorf("failed to evaluate builtin case %d: %w", idx, err)
+			}
+			if ok {
+				log.Debugf("[COND] builtin case matched index=%d name=%q target=%q", idx, kase.Name, kase.Target)
+				if kase.Target == "" {
+					return "", fmt.Errorf("builtin case %d has empty target", idx)
+				}
+				// Directly return target node ID; executor will route to this node.
+				return kase.Target, nil
+			}
 		}
 
-		return target, nil
-	}, nil
-}
-
-// createExpressionCondition creates a condition function from an expression.
-func (c *Compiler) createExpressionCondition(condition Condition) (graph.ConditionalFunc, error) {
-	// TODO: Implement expression evaluation
-	// For now, return a simple condition that always returns the default route
-
-	return func(ctx context.Context, state graph.State) (string, error) {
-		// Placeholder: always return default route
-		if condition.Default != "" {
-			return condition.Default, nil
+		if cond.Default != "" {
+			log.Debugf("[COND] builtin no case matched, using default target=%q", cond.Default)
+			return cond.Default, nil
 		}
-
-		// If no default, return the first route
-		for _, target := range condition.Routes {
-			return target, nil
-		}
-
-		return "", fmt.Errorf("no valid route found")
+		return "", fmt.Errorf("no builtin case matched and no default specified")
 	}, nil
 }
 
@@ -516,19 +553,59 @@ func (c *Compiler) createFunctionCondition(condition Condition) (graph.Condition
 // addToolRoutingEdge adds a tool routing edge (AddToolsConditionalEdges pattern).
 func (c *Compiler) addToolRoutingEdge(stateGraph *graph.StateGraph, condEdge ConditionalEdge) error {
 	toolsNode := condEdge.Condition.ToolsNode
-	next := condEdge.Condition.Next
+	fallback := condEdge.Condition.Fallback
 
 	if toolsNode == "" {
 		return fmt.Errorf("tools_node is required for tool_routing")
 	}
-	if next == "" {
-		return fmt.Errorf("next is required for tool_routing")
+	if fallback == "" {
+		return fmt.Errorf("fallback is required for tool_routing")
 	}
 
 	// Use AddToolsConditionalEdges from graph package
-	stateGraph.AddToolsConditionalEdges(condEdge.From, toolsNode, next)
+	stateGraph.AddToolsConditionalEdges(condEdge.From, toolsNode, fallback)
 
 	return nil
+}
+
+// normalizeConditionVariable rewrites a human-friendly variable used in
+// builtin conditions into an internal state path. It is responsible for
+// mapping DSL-level shortcuts such as:
+//
+//   - "output_parsed.classification"
+//   - "input.output_parsed.classification"
+//
+// into concrete graph.State paths that include the source node ID, e.g.:
+//
+//   - "node_structured.<fromNodeID>.output_parsed.classification"
+//
+// This keeps the DSL syntax simple (no explicit node IDs) while allowing the
+// engine to store structured outputs in a per-node cache.
+func normalizeConditionVariable(variable string, fromNodeID string) string {
+	if variable == "" {
+		return variable
+	}
+
+	// Explicit state/nodes prefixes are left as-is.
+	if strings.HasPrefix(variable, "state.") || strings.HasPrefix(variable, "nodes.") {
+		return variable
+	}
+
+	// input.* refers to the structured output of the immediate upstream node.
+	if strings.HasPrefix(variable, "input.") {
+		if fromNodeID == "" {
+			// No upstream node context; fall back to original variable.
+			return strings.TrimPrefix(variable, "input.")
+		}
+		rest := strings.TrimPrefix(variable, "input.")
+		if rest == "" {
+			return variable
+		}
+		return "node_structured." + fromNodeID + "." + rest
+	}
+
+	// Fallback: treat as a plain state field name.
+	return variable
 }
 
 // applyOutputMapping applies output mapping from DSL node outputs configuration.
@@ -828,6 +905,55 @@ func (c *Compiler) createLLMAgentNodeFunc(node Node) (graph.NodeFunc, error) {
 		hasGenConfig = true
 	}
 
+	// Optional stop sequences.
+	if stopRaw, ok := engine.Config["stop"]; ok {
+		switch v := stopRaw.(type) {
+		case []interface{}:
+			stop := make([]string, 0, len(v))
+			for _, item := range v {
+				if s, ok := item.(string); ok {
+					stop = append(stop, s)
+				}
+			}
+			if len(stop) > 0 {
+				genConfig.Stop = stop
+				hasGenConfig = true
+			}
+		case []string:
+			if len(v) > 0 {
+				genConfig.Stop = append([]string(nil), v...)
+				hasGenConfig = true
+			}
+		}
+	}
+
+	// Optional presence_penalty / frequency_penalty.
+	if presence, ok := engine.Config["presence_penalty"].(float64); ok {
+		genConfig.PresencePenalty = &presence
+		hasGenConfig = true
+	}
+	if freq, ok := engine.Config["frequency_penalty"].(float64); ok {
+		genConfig.FrequencyPenalty = &freq
+		hasGenConfig = true
+	}
+
+	// Optional reasoning_effort (string).
+	if re, ok := engine.Config["reasoning_effort"].(string); ok && re != "" {
+		genConfig.ReasoningEffort = &re
+		hasGenConfig = true
+	}
+
+	// Optional thinking_enabled / thinking_tokens for providers that support it.
+	if thinkingEnabled, ok := engine.Config["thinking_enabled"].(bool); ok {
+		genConfig.ThinkingEnabled = &thinkingEnabled
+		hasGenConfig = true
+	}
+	if thinkingTokensRaw, ok := engine.Config["thinking_tokens"].(float64); ok {
+		tokens := int(thinkingTokensRaw)
+		genConfig.ThinkingTokens = &tokens
+		hasGenConfig = true
+	}
+
 	// Optional streaming flag (enable token streaming).
 	if stream, ok := engine.Config["stream"].(bool); ok {
 		genConfig.Stream = stream
@@ -949,75 +1075,53 @@ func (c *Compiler) createLLMAgentNodeFunc(node Node) (graph.NodeFunc, error) {
 		}
 
 		// Process events: forward them to parent and extract final response.
-		// This follows the same pattern as graph.processAgentEventStream.
+		// This follows the same pattern as graph.processAgentEventStream, but we
+		// intentionally do NOT introduce an extra timeout here. Timeouts should
+		// be controlled by the outer context (e.g. Runner / HTTP layer), so
+		// that long‑running but healthy LLM calls are not spuriously aborted.
 		var lastResponse string
 		var messages []model.Message
 		var outputParsed any
 		hasOutputParsed := false
 
-		// Add timeout to detect hanging. We reset the timer whenever we
-		// successfully receive an event, so the timeout only fires when
-		// there has been *no* activity for the full duration.
-		const llmAgentInactivityTimeout = 30 * time.Second
-		timeout := time.NewTimer(llmAgentInactivityTimeout)
-		defer timeout.Stop()
+		for {
+			ev, ok := <-agentEventChan
+			if !ok {
+				// Channel closed
+				goto done
+			}
 
-		resetTimer := func() {
-			if !timeout.Stop() {
-				select {
-				case <-timeout.C:
-				default:
+			// Handle errors
+			if ev.Error != nil {
+				return nil, fmt.Errorf("LLM agent error: %s", ev.Error.Message)
+			}
+
+			// Notify completion if required
+			// This is critical for LLMAgent's flow to continue
+			if ev.RequiresCompletion {
+				completionID := agent.GetAppendEventNoticeKey(ev.ID)
+				if err := invocation.NotifyCompletion(subCtx, completionID); err != nil {
+					log.Warnf("Failed to notify completion for %s: %v", completionID, err)
 				}
 			}
-			timeout.Reset(llmAgentInactivityTimeout)
-		}
 
-		for {
-			select {
-			case ev, ok := <-agentEventChan:
-				if !ok {
-					// Channel closed
-					goto done
+			// Forward the event to the parent event channel
+			if parentEventChan != nil {
+				if err := event.EmitEvent(ctx, parentEventChan, ev); err != nil {
+					return nil, fmt.Errorf("failed to forward event: %w", err)
 				}
+			}
 
-				// We received an event, so reset inactivity timer.
-				resetTimer()
-
-				// Handle errors
-				if ev.Error != nil {
-					return nil, fmt.Errorf("LLM agent error: %s", ev.Error.Message)
-				}
-
-				// Notify completion if required
-				// This is critical for LLMAgent's flow to continue
-				if ev.RequiresCompletion {
-					completionID := agent.GetAppendEventNoticeKey(ev.ID)
-					if err := invocation.NotifyCompletion(subCtx, completionID); err != nil {
-						log.Warnf("Failed to notify completion for %s: %v", completionID, err)
+			// Extract last response from any event with content
+			if ev.Response != nil && len(ev.Response.Choices) > 0 {
+				msg := ev.Response.Choices[0].Message
+				if msg.Content != "" {
+					lastResponse = msg.Content
+					// Collect message for state
+					if msg.Role != "" {
+						messages = append(messages, msg)
 					}
 				}
-
-				// Forward the event to the parent event channel
-				if parentEventChan != nil {
-					if err := event.EmitEvent(ctx, parentEventChan, ev); err != nil {
-						return nil, fmt.Errorf("failed to forward event: %w", err)
-					}
-				}
-
-				// Extract last response from any event with content
-				if ev.Response != nil && len(ev.Response.Choices) > 0 {
-					msg := ev.Response.Choices[0].Message
-					if msg.Content != "" {
-						lastResponse = msg.Content
-						// Collect message for state
-						if msg.Role != "" {
-							messages = append(messages, msg)
-						}
-					}
-				}
-
-			case <-timeout.C:
-				return nil, fmt.Errorf("timeout waiting for LLM agent to complete")
 			}
 		}
 
@@ -1043,7 +1147,9 @@ func (c *Compiler) createLLMAgentNodeFunc(node Node) (graph.NodeFunc, error) {
 		// Build the state delta returned to the graph executor.
 		// We explicitly expose:
 		//   - last_response / messages (for downstream LLM nodes)
-		//   - output_parsed (parsed JSON structured output), when present.
+		//   - node_structured[nodeID].output_parsed = parsed JSON, so that
+		//     per-node structured outputs can be consumed without relying on a
+		//     single global key.
 		result := graph.State{}
 		if lastResponse != "" {
 			result[graph.StateKeyLastResponse] = lastResponse
@@ -1052,12 +1158,77 @@ func (c *Compiler) createLLMAgentNodeFunc(node Node) (graph.NodeFunc, error) {
 			result[graph.StateKeyMessages] = messages
 		}
 		if hasOutputParsed {
-			result["output_parsed"] = outputParsed
+			result["node_structured"] = map[string]any{
+				node.ID: map[string]any{
+					"output_parsed": outputParsed,
+				},
+			}
 		}
 		if len(result) == 0 {
 			return nil, nil
 		}
 		return result, nil
+	}, nil
+}
+
+// createUserApprovalNodeFunc creates a NodeFunc for a user approval step.
+// It uses graph.Interrupt to pause execution and waits for a resume value.
+// The resume value is normalized into "approve"/"reject" and exposed via
+// approval_result, while also echoing the message as last_response.
+func (c *Compiler) createUserApprovalNodeFunc(node Node) (graph.NodeFunc, error) {
+	engine := node.EngineNode
+
+	// Extract approval message from config (required at validation level).
+	message := "Please approve this action (yes/no):"
+	if msg, ok := engine.Config["message"].(string); ok && strings.TrimSpace(msg) != "" {
+		message = msg
+	}
+
+	// Optional auto_approve flag (for demos/tests).
+	autoApprove := false
+	if v, ok := engine.Config["auto_approve"].(bool); ok {
+		autoApprove = v
+	}
+
+	// Use node ID as the interrupt key so that resume commands can target
+	// this specific approval step.
+	interruptKey := node.ID
+
+	return func(ctx context.Context, state graph.State) (any, error) {
+		// When auto_approve is enabled, skip creating an interrupt and
+		// directly treat this as an approved decision. This is useful for
+		// CLI examples and automated tests that don't implement resume flows.
+		if autoApprove {
+			return graph.State{
+				"approval_result": "approve",
+			}, nil
+		}
+
+		// Build interrupt payload with rich context for frontends.
+		payload := map[string]any{
+			"message": message,
+			"node_id": node.ID,
+		}
+
+		// graph.Interrupt will:
+		//   - return a resume value immediately if present; or
+		//   - create an InterruptError carrying this payload.
+		resumeValue, err := graph.Interrupt(ctx, state, interruptKey, payload)
+		if err != nil {
+			return nil, err
+		}
+
+		decisionRaw, _ := resumeValue.(string)
+		decision := strings.ToLower(strings.TrimSpace(decisionRaw))
+
+		normalized := "reject"
+		if decision == "approve" || decision == "yes" || decision == "y" {
+			normalized = "approve"
+		}
+
+		return graph.State{
+			"approval_result": normalized,
+		}, nil
 	}, nil
 }
 

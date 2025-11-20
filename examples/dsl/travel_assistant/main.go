@@ -179,14 +179,22 @@ func executeWorkflow(ctx context.Context, appRunner runner.Runner, userID, sessi
 
 		// Capture state updates and final response.
 		if ev.StateDelta != nil {
-			// Log structured output (if classifier produced it).
-			if raw, ok := ev.StateDelta["output_parsed"]; ok {
-				var parsed map[string]any
-				_ = json.Unmarshal(raw, &parsed)
-				if cls, _ := parsed["classification"].(string); cls != "" {
-					fmt.Printf("[TA][structured_output] classification=%q full=%s\n", cls, string(raw))
-				} else {
-					fmt.Printf("[TA][structured_output] %s\n", string(raw))
+			// Log structured output from the classifier via per-node cache:
+			// state["node_structured"]["classifier"].output_parsed.
+			if raw, ok := ev.StateDelta["node_structured"]; ok {
+				// StateDelta values are JSON-encoded []byte.
+				var ns map[string]any
+				if err := json.Unmarshal(raw, &ns); err == nil {
+					if nodeOut, ok := ns["classifier"].(map[string]any); ok {
+						if op, ok := nodeOut["output_parsed"].(map[string]any); ok {
+							full, _ := json.Marshal(op)
+							if cls, _ := op["classification"].(string); cls != "" {
+								fmt.Printf("[TA][structured_output] classification=%q full=%s\n", cls, string(full))
+							} else {
+								fmt.Printf("[TA][structured_output] full=%s\n", string(full))
+							}
+						}
+					}
 				}
 			}
 

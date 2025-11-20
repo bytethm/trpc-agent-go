@@ -16,9 +16,9 @@ import (
 	"trpc.group/trpc-go/trpc-agent-go/graph"
 )
 
-// Evaluate evaluates a builtin condition against the given state.
+// Evaluate evaluates a CaseCondition against the given state.
 // It returns true if the condition is satisfied, false otherwise.
-func Evaluate(ctx context.Context, state graph.State, cond *BuiltinCondition) (bool, error) {
+func Evaluate(ctx context.Context, state graph.State, cond *CaseCondition) (bool, error) {
 	if cond == nil {
 		return false, fmt.Errorf("builtin condition is nil")
 	}

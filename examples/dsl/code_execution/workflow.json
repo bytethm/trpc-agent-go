@@ -5,12 +5,15 @@
   "version": "1.0.0",
   "nodes": [
     {
+      "id": "start",
+      "label": "Start",
+      "node_type": "builtin.start",
+      "config": {}
+    },
+    {
       "id": "python_analysis",
-      "name": "Python Data Analysis",
-      "component": {
-        "type": "component",
-        "ref": "builtin.code"
-      },
+      "label": "Python Data Analysis",
+      "node_type": "builtin.code",
       "config": {
         "code": "import statistics\nimport json\n\n# Sample data\ndata = [5, 12, 8, 15, 7, 9, 11]\n\n# Calculate statistics\nresults = {\n    'count': len(data),\n    'min': min(data),\n    'max': max(data),\n    'mean': round(statistics.mean(data), 2),\n    'median': statistics.median(data),\n    'stdev': round(statistics.stdev(data), 2)\n}\n\n# Print results\nprint('=== Python Data Analysis ===')\nfor key, value in results.items():\n    print(f'{key}: {value}')\nprint(json.dumps(results, indent=2))",
         "language": "python",
@@ -31,11 +34,8 @@
     },
     {
       "id": "bash_system_info",
-      "name": "Bash System Info",
-      "component": {
-        "type": "component",
-        "ref": "builtin.code"
-      },
+      "label": "Bash System Info",
+      "node_type": "builtin.code",
       "config": {
         "code": "echo '=== System Information ==='\necho \"Date: $(date)\"\necho \"User: $(whoami)\"\necho \"Working Directory: $(pwd)\"\necho \"Python Version: $(python3 --version 2>&1)\"\necho \"Bash Version: $BASH_VERSION\"",
         "language": "bash",
@@ -56,16 +56,18 @@
     },
     {
       "id": "format_results",
-      "name": "Format Results",
-      "component": {
-        "type": "component",
-        "ref": "custom.format_results"
-      },
+      "label": "Format Results",
+      "node_type": "custom.format_results",
       "config": {},
       "description": "Formats the final results from all code executions"
     }
   ],
   "edges": [
+    {
+      "id": "edge_start_python",
+      "source": "start",
+      "target": "python_analysis"
+    },
     {
       "id": "edge_1",
       "source": "python_analysis",
@@ -77,6 +79,5 @@
       "target": "format_results"
     }
   ],
-  "entry_point": "python_analysis",
-  "finish_point": "format_results"
+  "entry_point": "start"
 }

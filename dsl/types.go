@@ -33,14 +33,45 @@ type Workflow struct {
 	// ConditionalEdges define conditional routing between nodes
 	ConditionalEdges []ConditionalEdge `json:"conditional_edges,omitempty"`
 
+	// StateVariables declares workflow-level state variables that can be read
+	// and written by nodes (for example via builtin.set_state). This allows
+	// the workflow author to define the shape and reducer behavior of global
+	// state independently of any particular component.
+	StateVariables []StateVariable `json:"state_variables,omitempty"`
+
 	// EntryPoint is the ID of the starting node
 	EntryPoint string `json:"entry_point"`
 
-	// FinishPoint is the ID of the ending node (optional, defaults to END)
-	FinishPoint string `json:"finish_point,omitempty"`
-
 	// Metadata contains additional workflow-level metadata
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// StateVariable describes a workflow-level state variable. It is the single
+// source of truth for the variable's existence and coarse-grained type; nodes
+// such as builtin.set_state only assign to already-declared variables.
+type StateVariable struct {
+	// Name is the state field name (e.g., "greeting", "counter").
+	Name string `json:"name"`
+
+	// Kind is a coarse-grained classification for editor usage and schema
+	// inference: "string", "number", "boolean", "object", "array", "opaque".
+	// When omitted, it is treated as "opaque".
+	Kind string `json:"kind,omitempty"`
+
+	// JSONSchema optionally provides a JSON Schema when this variable
+	// represents a structured object.
+	JSONSchema map[string]any `json:"json_schema,omitempty"`
+
+	// Description explains what this state variable is for.
+	Description string `json:"description,omitempty"`
+
+	// Default is the default value if the state field is not present when
+	// the workflow starts. When omitted, no default is applied.
+	Default any `json:"default,omitempty"`
+
+	// Reducer specifies the reducer function name for this state field.
+	// When empty, the framework's DefaultReducer is used.
+	Reducer string `json:"reducer,omitempty"`
 }
 
 // Node represents an executable node in the engine DSL.
@@ -58,11 +89,14 @@ type Node struct {
 // EngineNode represents the engine-level node definition embedded under Node.Data.Engine.
 // It closely mirrors the original Node structure before ReactFlow alignment.
 type EngineNode struct {
-	// Name is the display name for this node instance
-	Name string `json:"name,omitempty"`
+	// Label is the human-readable label for this node instance
+	Label string `json:"label,omitempty"`
 
-	// Component specifies which component to use
-	Component ComponentRef `json:"component"`
+	// NodeType specifies which component to use (e.g., "builtin.llmagent").
+	NodeType string `json:"node_type"`
+
+	// NodeVersion is an optional component version (mirrors ComponentRef.Version).
+	NodeVersion string `json:"node_version,omitempty"`
 
 	// Config contains component-specific configuration
 	Config map[string]interface{} `json:"config,omitempty"`
@@ -75,38 +109,6 @@ type EngineNode struct {
 
 	// Description describes what this node does
 	Description string `json:"description,omitempty"`
-}
-
-// ComponentRef references a registered component.
-type ComponentRef struct {
-	// Type is the component type: "builtin", "custom", or "code"
-	Type string `json:"type"`
-
-	// Ref is the component reference (e.g., "llm", "http_request")
-	// For builtin/custom components, this is the component name in the registry
-	// For code components, this is ignored
-	Ref string `json:"ref,omitempty"`
-
-	// Version is the component version (optional)
-	Version string `json:"version,omitempty"`
-
-	// Code is the code to execute (only for type="code")
-	Code *CodeConfig `json:"code,omitempty"`
-}
-
-// CodeConfig defines inline code execution configuration.
-type CodeConfig struct {
-	// Language is the programming language (e.g., "python", "javascript")
-	Language string `json:"language"`
-
-	// Code is the actual code to execute
-	Code string `json:"code"`
-
-	// Inputs are the input variable names to extract from state
-	Inputs []string `json:"inputs,omitempty"`
-
-	// Outputs are the output variable names to write to state
-	Outputs []string `json:"outputs,omitempty"`
 }
 
 // Edge represents a direct connection between two nodes.
@@ -142,40 +144,49 @@ type ConditionalEdge struct {
 
 // Condition defines the routing logic for conditional edges.
 type Condition struct {
-	// Type is the condition type: "expression", "function", "component", or "tool_routing"
+	// Type is the condition type: "builtin", "function", or "tool_routing"
 	Type string `json:"type"`
 
-	// Expression is a simple expression (e.g., "state.counter > 10")
-	// Only used when Type="expression"
-	Expression string `json:"expression,omitempty"`
+	// Cases describes ordered builtin cases. The first matching case wins.
+	// Only used when Type="builtin".
+	Cases []BuiltinCase `json:"cases,omitempty"`
 
-	// Routes maps condition results to target node IDs
-	// For example: {"true": "node_a", "false": "node_b"}
-	Routes map[string]string `json:"routes"`
-
-	// Default is the default route if no condition matches
+	// Default is the default route if no case matches (for builtin/function).
 	Default string `json:"default,omitempty"`
 
-	// Function is a custom routing function reference
-	// Only used when Type="function"
+	// Function is a custom routing function reference.
+	// Only used when Type="function".
 	Function string `json:"function,omitempty"`
 
-	// ToolsNode is the tools node ID for tool routing
-	// Only used when Type="tool_routing"
+	// Routes maps condition results to target node IDs.
+	// Only used when Type="function".
+	Routes map[string]string `json:"routes,omitempty"`
+
+	// ToolsNode is the tools node ID for tool routing.
+	// Only used when Type="tool_routing".
 	ToolsNode string `json:"tools_node,omitempty"`
 
-	// Next is the next node after tools execution
-	// Only used when Type="tool_routing"
-	Next string `json:"next,omitempty"`
-
-	// Builtin is the structured condition configuration
-	// Only used when Type="builtin"
-	Builtin *BuiltinCondition `json:"builtin,omitempty"`
+	// Fallback is the next node after tools decision/execution.
+	// Only used when Type="tool_routing".
+	Fallback string `json:"fallback,omitempty"`
 }
 
-// BuiltinCondition represents a structured condition configuration.
+// BuiltinCase represents a single builtin case branch in a conditional edge.
+// Cases are evaluated in order; the first matching case's Target is chosen.
+type BuiltinCase struct {
+	// Name is an optional human-readable label for the case (UI/meta).
+	Name string `json:"name,omitempty"`
+
+	// Condition is the structured builtin condition to evaluate.
+	Condition CaseCondition `json:"condition"`
+
+	// Target is the node ID to route to when this case matches.
+	Target string `json:"target"`
+}
+
+// CaseCondition represents a structured condition configuration.
 // It contains multiple condition rules that are evaluated together using a logical operator.
-type BuiltinCondition struct {
+type CaseCondition struct {
 	// Conditions is the list of condition rules to evaluate
 	Conditions []ConditionRule `json:"conditions"`
 

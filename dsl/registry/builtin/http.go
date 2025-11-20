@@ -144,9 +144,9 @@ func (c *HTTPRequestComponent) Metadata() registry.ComponentMetadata {
 // It supports simple template syntax in url_template, body_template and
 // header values:
 //
-//   - {{state.foo}}                          -> state["foo"]
-//   - {{state.output_parsed.classification}} -> state["output_parsed"]["classification"]
-//   - {{nodes.nodeID.key}}                   -> state[node_responses][nodeID][key]
+//   - {{state.foo}}                           -> state["foo"]
+//   - {{nodes.nodeID.key}}                    -> state[node_responses][nodeID][key]
+//   - {{nodes.nodeID.output_parsed.field}}    -> state["node_structured"][nodeID]["output_parsed"]["field"]
 //
 // For now, templates are best-effort: missing variables are rendered as
 // empty strings.
@@ -258,6 +258,19 @@ func renderHTTPTemplate(tmpl string, state graph.State) string {
 			if len(parts) >= 3 {
 				nodeID := parts[1]
 				fieldPath := parts[2:]
+
+				// Prefer structured per-node outputs when available.
+				if raw, ok := state["node_structured"]; ok {
+					if structuredMap, ok := raw.(map[string]any); ok {
+						if nodeOut, ok := structuredMap[nodeID]; ok {
+							if v, ok := lookupNestedValue(nodeOut, fieldPath); ok {
+								return fmt.Sprint(v)
+							}
+						}
+					}
+				}
+
+				// Fallback to textual node_responses for backwards compatibility.
 				if raw, ok := state[graph.StateKeyNodeResponses]; ok {
 					if nodeMap, ok := raw.(map[string]any); ok {
 						if nodeOut, ok := nodeMap[nodeID]; ok {

@@ -62,7 +62,6 @@ func (vw *ViewWorkflow) ToEngineWorkflow() *dsl.Workflow {
 		Edges:            vw.Edges,
 		ConditionalEdges: vw.ConditionalEdges,
 		EntryPoint:       vw.EntryPoint,
-		FinishPoint:      vw.FinishPoint,
 		Metadata:         vw.Metadata,
 	}
 }
