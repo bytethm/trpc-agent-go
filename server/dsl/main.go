@@ -166,6 +166,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/workflows/schema", methodHandler("POST", s.handleWorkflowSchema))
 	// Per-node variable view for editors (for variable pickers / templating)
 	mux.HandleFunc("/api/v1/workflows/vars", methodHandler("POST", s.handleWorkflowVars))
+	// Single-node variable view for editors (current node only)
+	mux.HandleFunc("/api/v1/workflows/vars/node", methodHandler("POST", s.handleWorkflowNodeVars))
 
 	// Execution
 	mux.HandleFunc("/api/v1/workflows/{id}/execute", methodHandler("POST", s.handleExecuteWorkflow))

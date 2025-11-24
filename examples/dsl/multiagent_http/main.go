@@ -142,11 +142,17 @@ func executeWorkflow(ctx context.Context, appRunner runner.Runner, userID, sessi
 
 		if ev.StateDelta != nil {
 			// Log structured output classification if present.
-			if raw, ok := ev.StateDelta["output_parsed"]; ok {
-				var parsed map[string]any
-				_ = json.Unmarshal(raw, &parsed)
-				if cls, _ := parsed["classification"].(string); cls != "" {
-					fmt.Printf("\n[MA][structured_output] classification=%q full=%s\n", cls, string(raw))
+			if raw, ok := ev.StateDelta["node_structured"]; ok {
+				var ns map[string]map[string]any
+				if err := json.Unmarshal(raw, &ns); err == nil {
+					// This example uses a classifier node with id "classifier".
+					if nodeOut, ok := ns["classifier"]; ok {
+						if op, ok := nodeOut["output_parsed"].(map[string]any); ok {
+							if cls, _ := op["classification"].(string); cls != "" {
+								fmt.Printf("\n[MA][structured_output] classification=%q full=%v\n", cls, op)
+							}
+						}
+					}
 				}
 			}
 

@@ -388,6 +388,42 @@
         }
       }
     },
+    "/api/v1/workflows/vars/node": {
+      "post": {
+        "tags": ["validation"],
+        "summary": "List variables for a single node",
+        "description": "Returns variables available when editing a single node. This is a convenience wrapper over /workflows/vars for editors that want node-scoped variable pickers.",
+        "operationId": "getWorkflowNodeVars",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowVarsNodeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Variables for the requested node",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowVarsNode"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (e.g., malformed JSON or missing node_id)"
+          },
+          "404": {
+            "description": "Node not found in workflow"
+          }
+        }
+      }
+    },
     "/api/v1/workflows/{id}/compile": {
       "post": {
         "tags": ["workflows"],
@@ -687,6 +723,20 @@
             "items": {
               "$ref": "#/components/schemas/WorkflowVar"
             }
+          }
+        }
+      },
+      "WorkflowVarsNodeRequest": {
+        "type": "object",
+        "description": "Request body for /workflows/vars/node. Carries the full workflow draft plus the node_id currently being edited.",
+        "required": ["workflow", "node_id"],
+        "properties": {
+          "workflow": {
+            "$ref": "#/components/schemas/Workflow"
+          },
+          "node_id": {
+            "type": "string",
+            "description": "ID of the node whose available variables should be returned"
           }
         }
       },

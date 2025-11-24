@@ -135,7 +135,6 @@ Built‑in components are implemented under `dsl/registry/builtin`. Each compone
     - Similar to `builtin.llm`: `messages` plus model configuration.
   - `outputs`:
     - `last_response` / `messages` as above.
-    - `output_parsed` (`type_id: llmagent.output_parsed, kind: object`) when `structured_output` is configured.
   - `config_schema`:
     - `model_name`, `instruction`, `tools`, `tool_sets`, `mcp_tools`, `structured_output` (JSON Schema), sampling parameters, etc.
 

@@ -63,7 +63,7 @@ func (c *LLMAgentComponent) Metadata() registry.ComponentMetadata {
 		// LLMAgent does not consume additional named state inputs beyond the
 		// built-in graph fields (messages/user_input/session). Those are added
 		// by SchemaInference.addBuiltinFields, so Inputs can remain empty here.
-		Inputs: []registry.ParameterSchema{},
+		Inputs:  []registry.ParameterSchema{},
 		Outputs: []registry.ParameterSchema{
 			{
 				Name:        graph.StateKeyLastResponse,
@@ -81,14 +81,6 @@ func (c *LLMAgentComponent) Metadata() registry.ComponentMetadata {
 				GoType:      reflect.TypeOf([]model.Message{}),
 				Description: "Conversation messages",
 				Reducer:     "message",
-			},
-			{
-				Name:        "output_parsed",
-				Type:        "map[string]any",
-				TypeID:      "llmagent.output_parsed",
-				Kind:        "object",
-				GoType:      reflect.TypeOf(map[string]any{}),
-				Description: "Structured JSON output when structured_output is configured (access via output_parsed.field)",
 			},
 		},
 		ConfigSchema: []registry.ParameterSchema{

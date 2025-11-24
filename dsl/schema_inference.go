@@ -548,80 +548,23 @@ func (si *SchemaInference) attachComponentContext(workflow *Workflow, paramMap m
 		nodeByID[node.ID] = node
 	}
 
+	// LLMAgent structured outputs are now stored exclusively in the per-node
+	// node_structured cache and surfaced to editors via higher-level variables
+	// (e.g., input.output_parsed, nodes.<id>.output_parsed). We intentionally
+	// avoid enriching a global output_parsed field here to keep the engine
+	// schema focused on true state fields.
 	si.attachLLMAgentStructuredOutput(workflow, paramMap, nodeByID)
 	si.attachEndStructuredOutput(workflow, paramMap, nodeByID)
 }
 
-// attachLLMAgentStructuredOutput enriches output_parsed usage with JSONSchema and precise writers.
+// attachLLMAgentStructuredOutput used to enrich a global output_parsed field
+// with JSONSchema and precise writers. LLMAgent no longer exposes a global
+// output_parsed in StateSchema, so this hook is intentionally a no-op kept for
+// potential future extensions.
 func (si *SchemaInference) attachLLMAgentStructuredOutput(workflow *Workflow, paramMap map[string]*ParameterInfo, nodeByID map[string]Node) {
-	// Track builtin.llmagent nodes that actually configure structured_output so we can:
-	//   1) Attach JSONSchema for output_parsed.
-	//   2) Treat only those nodes as writers of output_parsed in usage metadata.
-	llmNodesWithStructuredOutput := make(map[string]map[string]any)
-
-	for _, node := range workflow.Nodes {
-		engine := node.EngineNode
-
-		// We only care about builtin.llmagent here.
-		if engine.NodeType != "builtin.llmagent" {
-			continue
-		}
-
-		// If the node has structured_output configured, attach its schema to output_parsed.
-		rawSchema, ok := engine.Config["structured_output"]
-		if !ok {
-			continue
-		}
-
-		schemaMap, ok := rawSchema.(map[string]any)
-		if !ok {
-			continue
-		}
-
-		llmNodesWithStructuredOutput[node.ID] = schemaMap
-	}
-
-	param, exists := paramMap["output_parsed"]
-	if !exists || param == nil {
-		return
-	}
-
-	// Attach JSON schema once; if multiple nodes contribute, we keep the first.
-	if param.JSONSchema == nil {
-		for _, schemaMap := range llmNodesWithStructuredOutput {
-			param.JSONSchema = schemaMap
-			break
-		}
-	}
-
-	// Refine writers for output_parsed:
-	// - Keep non-output sources (e.g., dsl:, code:) as-is.
-	// - For output:<nodeID> coming from builtin.llmagent, only keep nodes that
-	//   actually configure structured_output. This prevents nodes like
-	//   flight_agent / itinerary_agent (that reuse LLMAgent without structured_output)
-	//   from being listed as writers of output_parsed.
-	if len(param.Sources) == 0 {
-		return
-	}
-
-	filtered := make([]string, 0, len(param.Sources))
-	for _, src := range param.Sources {
-		if strings.HasPrefix(src, "output:") {
-			parts := strings.SplitN(src, ":", 2)
-			if len(parts) == 2 && parts[1] != "" {
-				nodeID := parts[1]
-				node, ok := nodeByID[nodeID]
-				if ok && node.EngineNode.NodeType == "builtin.llmagent" {
-					// For builtin.llmagent, only keep as writer when structured_output is configured.
-					if _, hasSO := llmNodesWithStructuredOutput[nodeID]; !hasSO {
-						continue
-					}
-				}
-			}
-		}
-		filtered = append(filtered, src)
-	}
-	param.Sources = filtered
+	_ = workflow
+	_ = paramMap
+	_ = nodeByID
 }
 
 // attachEndStructuredOutput enriches end_structured_output usage when builtin.end declares an output_schema.

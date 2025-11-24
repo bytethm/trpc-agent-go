@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"reflect"
+	"sort"
 	"strings"
 
 	"trpc.group/trpc-go/trpc-agent-go/dsl"
@@ -359,6 +359,80 @@ type nodeVarsResponse struct {
 	Vars  []nodeVariable `json:"vars"`
 }
 
+// computeNodeVars builds the per-node variable view for a compiled engine workflow.
+// It is shared by /workflows/vars (all nodes) and /workflows/vars/node (single node).
+// Semantics: for each node, return the list of **state variables that can be
+// referenced in expressions**, not just the fields written by that node.
+// Variable names follow the "state.<field>" convention so that editors can
+// insert them directly into templates/expressions.
+func (s *Server) computeNodeVars(engineWorkflow *dsl.Workflow) ([]nodeVarsResponse, error) {
+	if engineWorkflow == nil {
+		return nil, nil
+	}
+
+	// Reuse the same schema inference as /workflows/schema so variable
+	// suggestions are derived from the canonical StateSchema + FieldUsage.
+	si := dsl.NewSchemaInference(s.componentRegistry)
+	_, usage, err := si.InferSchemaAndUsage(engineWorkflow)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert usage map to a deterministic slice sorted by field name.
+	fields := make([]dsl.FieldUsage, 0, len(usage)+1)
+	hasUserInput := false
+	for _, u := range usage {
+		// Hide internal-only fields from editor variable suggestions.
+		if u.Name == "node_structured" || u.Name == "output_parsed" {
+			continue
+		}
+		if u.Name == "user_input" {
+			hasUserInput = true
+		}
+		fields = append(fields, u)
+	}
+	// Ensure the well-known built-in user_input field is always available as
+	// a variable, even if no component metadata currently references it.
+	if !hasUserInput {
+		fields = append(fields, dsl.FieldUsage{
+			Name: "user_input",
+			Type: "string",
+			Kind: "string",
+		})
+	}
+	sort.Slice(fields, func(i, j int) bool {
+		return fields[i].Name < fields[j].Name
+	})
+
+	// Pre-build the variable list that applies to all nodes. For now we expose
+	// all state fields as referenceable from any node; future versions can add
+	// graph-aware filtering if needed.
+	baseVars := make([]nodeVariable, 0, len(fields))
+	for _, f := range fields {
+		baseVars = append(baseVars, nodeVariable{
+			Variable:   "state." + f.Name,
+			Type:       f.Type,
+			Kind:       f.Kind,
+			JSONSchema: f.JSONSchema,
+		})
+	}
+
+	result := make([]nodeVarsResponse, 0, len(engineWorkflow.Nodes))
+	for _, n := range engineWorkflow.Nodes {
+		engine := n.EngineNode
+		result = append(result, nodeVarsResponse{
+			ID:    n.ID,
+			Title: engine.Label,
+			// Each node currently sees the same set of state variables.
+			// This keeps the semantics simple and pushes ordering/flow
+			// concerns to future, graph-aware improvements.
+			Vars: baseVars,
+		})
+	}
+
+	return result, nil
+}
+
 // handleWorkflowVars returns, for a given workflow (view DSL), the list of
 // variables produced by each node. This is intended for front-end editors to
 // drive "variable pickers" when configuring templates or HTTP requests.
@@ -370,66 +444,10 @@ func (s *Server) handleWorkflowVars(w http.ResponseWriter, r *http.Request) {
 	}
 
 	engineWorkflow := viewWorkflow.ToEngineWorkflow()
-
-	// Pre-compute a map from node ID to any structured_output schema so that we
-	// can attach JSON Schema to the corresponding variables (e.g., output_parsed).
-	structuredSchemas := make(map[string]map[string]interface{})
-	for _, n := range engineWorkflow.Nodes {
-		if n.EngineNode.Component.Ref != "builtin.llmagent" {
-			continue
-		}
-		if raw, ok := n.EngineNode.Config["structured_output"]; ok {
-			if m, ok := raw.(map[string]interface{}); ok {
-				structuredSchemas[n.ID] = m
-			}
-		}
-	}
-
-	var result []nodeVarsResponse
-
-	for _, n := range engineWorkflow.Nodes {
-		engine := n.EngineNode
-
-		component, exists := s.componentRegistry.Get(engine.Component.Ref)
-		if !exists {
-			// If the component is unknown, skip variables for this node but keep a
-			// placeholder entry so editors can still show the node.
-			result = append(result, nodeVarsResponse{ID: n.ID, Title: engine.Name})
-			continue
-		}
-
-		metadata := component.Metadata()
-		vars := make([]nodeVariable, 0, len(metadata.Outputs))
-
-		for _, out := range metadata.Outputs {
-			v := nodeVariable{
-				Variable: out.Name,
-				Type:     out.Type,
-			}
-
-			// Derive a simple kind from GoType similar to SchemaInference.
-			if out.GoType != nil {
-				if kind := nodeVarKindFromGoType(out.GoType, out.Name); kind != "" {
-					v.Kind = kind
-				}
-			}
-
-			// Attach structured_output JSON schema for output_parsed on llmagent
-			// nodes to allow editors to expand nested fields.
-			if engine.Component.Ref == "builtin.llmagent" && out.Name == "output_parsed" {
-				if schema, ok := structuredSchemas[n.ID]; ok {
-					v.JSONSchema = schema
-				}
-			}
-
-			vars = append(vars, v)
-		}
-
-		result = append(result, nodeVarsResponse{
-			ID:    n.ID,
-			Title: engine.Name,
-			Vars:  vars,
-		})
+	result, err := s.computeNodeVars(engineWorkflow)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Failed to infer variables: "+err.Error())
+		return
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
@@ -437,33 +455,43 @@ func (s *Server) handleWorkflowVars(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// nodeVarKindFromGoType mirrors the coarse-grained kind classification used in
-// dsl.classifyGoType, but is defined locally to avoid exporting internal
-// helpers. It is intentionally minimal and only used for editor hints.
-func nodeVarKindFromGoType(t reflect.Type, fieldName string) string {
-	if t == nil {
-		return "opaque"
+// workflowNodeVarsRequest is used by /api/v1/workflows/vars/node to request
+// variables for a single node while still sending the full workflow draft.
+type workflowNodeVarsRequest struct {
+	Workflow ViewWorkflow `json:"workflow"`
+	NodeID   string       `json:"node_id"`
+}
+
+// handleWorkflowNodeVars returns variables for a single node inside the given
+// workflow. This is a convenience endpoint for editors that want to fetch
+// variables scoped to the node currently being edited, without having to
+// traverse the full /workflows/vars response.
+func (s *Server) handleWorkflowNodeVars(w http.ResponseWriter, r *http.Request) {
+	var req workflowNodeVarsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request JSON: "+err.Error())
+		return
+	}
+	if req.NodeID == "" {
+		respondError(w, http.StatusBadRequest, "node_id is required")
+		return
 	}
 
-	switch t.Kind() {
-	case reflect.String:
-		return "string"
-	case reflect.Bool:
-		return "boolean"
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Float32, reflect.Float64:
-		return "number"
-	case reflect.Slice, reflect.Array:
-		return "array"
-	case reflect.Map, reflect.Struct:
-		if fieldName == "output_parsed" {
-			return "object"
-		}
-		return "object"
-	default:
-		return "opaque"
+	engineWorkflow := req.Workflow.ToEngineWorkflow()
+	nodes, err := s.computeNodeVars(engineWorkflow)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Failed to infer variables: "+err.Error())
+		return
 	}
+
+	for _, n := range nodes {
+		if n.ID == req.NodeID {
+			respondJSON(w, http.StatusOK, n)
+			return
+		}
+	}
+
+	respondError(w, http.StatusNotFound, "node not found in workflow")
 }
 
 // handleCompileWorkflow compiles a workflow to executable graph.

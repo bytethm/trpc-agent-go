@@ -124,7 +124,9 @@ func (c *EndComponent) Execute(ctx context.Context, config registry.ComponentCon
 	if nodeID != "" {
 		stateDelta["node_structured"] = map[string]any{
 			nodeID: map[string]any{
-				"structured_output": rendered,
+				// For consistency with LLMAgent, we expose the End node's
+				// structured result under the per-node "output_parsed" key.
+				"output_parsed": rendered,
 			},
 		}
 	}

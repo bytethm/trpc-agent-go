@@ -146,6 +146,7 @@ func executeWorkflow(ctx context.Context, appRunner runner.Runner, userID, sessi
 	// Process events
 	var lastResponse string
 	var streaming bool
+	var hadStreaming bool
 
 	for ev := range eventChan {
 		// Handle errors
@@ -161,6 +162,7 @@ func executeWorkflow(ctx context.Context, appRunner runner.Runner, userID, sessi
 					fmt.Print("🤖 ")
 					streaming = true
 				}
+				hadStreaming = true
 				fmt.Print(choice.Delta.Content)
 			}
 			// When an empty delta arrives after streaming, finish the line.
@@ -207,11 +209,15 @@ func executeWorkflow(ctx context.Context, appRunner runner.Runner, userID, sessi
 		}
 	}
 
-	// Print response
-	if lastResponse != "" {
-		fmt.Printf("\n🤖 Response:\n%s\n\n", lastResponse)
-	} else {
-		fmt.Printf("❌ No response generated\n\n")
+	// Print response:
+	// - 如果有流式输出，只保留流式内容，不再额外用 last_response 再打印一遍
+	// - 如果没有流式输出，则回退到打印 last_response
+	if !hadStreaming {
+		if lastResponse != "" {
+			fmt.Printf("\n🤖 Response:\n%s\n\n", lastResponse)
+		} else {
+			fmt.Printf("❌ No response generated\n\n")
+		}
 	}
 
 	return nil
