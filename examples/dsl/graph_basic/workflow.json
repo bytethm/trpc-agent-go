@@ -102,24 +102,44 @@
       "id": "analyze_routing",
       "from": "analyze",
       "condition": {
-        "type": "tool_routing",
-        "tools_node": "tools",
-        "fallback": "route_complexity"
+        "cases": [
+          {
+            "name": "has_tool_calls",
+            "predicate": {
+              "expression": "has_tool_calls()",
+              "format": "cel"
+            },
+            "target": "tools"
+          }
+        ],
+        "default": "route_complexity"
       }
     },
     {
       "id": "complexity_routing",
       "from": "route_complexity",
       "condition": {
-        "type": "function",
-        "function": "custom.complexity_condition",
-        "routes": {
-          "simple": "enhance",
-          "moderate": "enhance",
-          "complex": "summarize"
-        }
+        "type": "builtin",
+        "cases": [
+          {
+            "name": "simple_or_moderate",
+            "predicate": {
+              "expression": "state.complexity_level == \"simple\" || state.complexity_level == \"moderate\"",
+              "format": "cel"
+            },
+            "target": "enhance"
+          },
+          {
+            "name": "complex",
+            "predicate": {
+              "expression": "state.complexity_level == \"complex\"",
+              "format": "cel"
+            },
+            "target": "summarize"
+          }
+        ]
       }
     }
   ],
-  "entry_point": "start"
+  "start_node_id": "start"
 }

@@ -15,8 +15,8 @@
       "node_type": "builtin.transform",
       "config": {
         "expr": {
-          "expression": "{\"original_text\": \"{{state.user_input}}\", \"note\": \"This object was created by builtin.transform\"}",
-          "format": "json"
+          "expression": "{ \"original_text\": state.user_input, \"note\": \"This object was created by builtin.transform\" }",
+          "format": "cel"
         },
         "output_schema": {
           "type": "object",
@@ -40,8 +40,8 @@
       "node_type": "builtin.end",
       "config": {
         "expr": {
-          "expression": "{\"message\": \"Transform node has written its result into state.result\", \"result\": \"{{state.result}}\"}",
-          "format": "json"
+          "expression": "{ \"message\": \"Transform node has written its result into state.result\", \"result\": state.result }",
+          "format": "cel"
         },
         "output_schema": {
           "type": "object",
@@ -73,6 +73,5 @@
     }
   ],
   "conditional_edges": [],
-  "entry_point": "start"
+  "start_node_id": "start"
 }
-

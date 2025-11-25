@@ -39,8 +39,10 @@ type Workflow struct {
 	// state independently of any particular component.
 	StateVariables []StateVariable `json:"state_variables,omitempty"`
 
-	// EntryPoint is the ID of the starting node
-	EntryPoint string `json:"entry_point"`
+	// StartNodeID is the ID of the visual start node (usually the builtin.start
+	// node). The actual executable entry point is derived from this node's
+	// outgoing edge during compilation.
+	StartNodeID string `json:"start_node_id"`
 
 	// Metadata contains additional workflow-level metadata
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
@@ -142,77 +144,44 @@ type ConditionalEdge struct {
 	Label string `json:"label,omitempty"`
 }
 
-// Condition defines the routing logic for conditional edges.
+// Condition defines the routing logic for conditional edges. It is expressed
+// as an ordered list of CEL-based cases plus an optional default target.
+// Each case's Predicate is evaluated in order; the first case that returns
+// true wins and its Target node ID is selected. If no case matches and
+// Default is non-empty, Default is used. Otherwise, evaluation fails.
 type Condition struct {
-	// Type is the condition type: "builtin", "function", or "tool_routing"
-	Type string `json:"type"`
+	// Cases describes ordered cases. The first matching case wins.
+	Cases []Case `json:"cases,omitempty"`
 
-	// Cases describes ordered builtin cases. The first matching case wins.
-	// Only used when Type="builtin".
-	Cases []BuiltinCase `json:"cases,omitempty"`
-
-	// Default is the default route if no case matches (for builtin/function).
+	// Default is the default route if no case matches.
 	Default string `json:"default,omitempty"`
-
-	// Function is a custom routing function reference.
-	// Only used when Type="function".
-	Function string `json:"function,omitempty"`
-
-	// Routes maps condition results to target node IDs.
-	// Only used when Type="function".
-	Routes map[string]string `json:"routes,omitempty"`
-
-	// ToolsNode is the tools node ID for tool routing.
-	// Only used when Type="tool_routing".
-	ToolsNode string `json:"tools_node,omitempty"`
-
-	// Fallback is the next node after tools decision/execution.
-	// Only used when Type="tool_routing".
-	Fallback string `json:"fallback,omitempty"`
 }
 
-// BuiltinCase represents a single builtin case branch in a conditional edge.
+	// Case represents a single case branch in a conditional edge.
 // Cases are evaluated in order; the first matching case's Target is chosen.
-type BuiltinCase struct {
+type Case struct {
 	// Name is an optional human-readable label for the case (UI/meta).
 	Name string `json:"name,omitempty"`
 
-	// Condition is the structured builtin condition to evaluate.
-	Condition CaseCondition `json:"condition"`
+	// Predicate is the CEL expression evaluated for this case. When it
+	// evaluates to true, the case's Target is chosen. The expression is
+	// evaluated with access to:
+	//   - state: graph.State
+	//   - input: JSON-like view of the upstream node output (e.g.,
+	//            node_structured[from].output_parsed for builtin routes).
+	Predicate Expression `json:"predicate"`
 
 	// Target is the node ID to route to when this case matches.
 	Target string `json:"target"`
 }
 
-// CaseCondition represents a structured condition configuration.
-// It contains multiple condition rules that are evaluated together using a logical operator.
-type CaseCondition struct {
-	// Conditions is the list of condition rules to evaluate
-	Conditions []ConditionRule `json:"conditions"`
-
-	// LogicalOperator specifies how to combine multiple conditions
-	// Valid values: "and", "or"
-	// Default: "and"
-	LogicalOperator string `json:"logical_operator,omitempty"`
-}
-
-// ConditionRule represents a single condition rule.
-// It compares a variable from state against a value using an operator.
-type ConditionRule struct {
-	// Variable is the path to the variable in state (e.g., "state.score", "state.category")
-	Variable string `json:"variable"`
-
-	// Operator is the comparison operator
-	// Supported operators:
-	//   String/Array: "contains", "not_contains", "starts_with", "ends_with",
-	//                 "is", "is_not", "empty", "not_empty", "in", "not_in"
-	//   Number: "==", "!=", ">", "<", ">=", "<="
-	//   Null: "null", "not_null"
-	Operator string `json:"operator"`
-
-	// Value is the value to compare against
-	// Can be string, number, boolean, or array
-	Value interface{} `json:"value,omitempty"`
+// Expression represents a CEL expression used in the engine DSL. It matches
+// the common OpenAI shape { "expression": "...", "format": "cel" } and is
+// evaluated in an environment that typically exposes "state" and "input"
+// variables.
+type Expression struct {
+	Expression string `json:"expression"`
+	Format     string `json:"format,omitempty"`
 }
 
 // NodeIO defines an input or output parameter for a node.

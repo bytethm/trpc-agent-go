@@ -7,11 +7,341 @@
   "$defs": {
     "Workflow": {
       "type": "object",
-      "required": ["name", "nodes", "edges", "entry_point"],
+      "required": ["name", "nodes", "edges", "start_node_id"],
       "properties": {
-        "version": { "type": "string" },
-        "name": { "type": "string" },
-        "description": { "type": "string" },
+        "version": {
+          "type": "string",
+          "description": "Optional DSL version string (e.g., \"1.0\")."
+        },
+        "name": {
+          "type": "string",
+          "description": "Workflow name (used for display and logging)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the workflow."
+        },
+        "nodes": {
+          "type": "array",
+          "description": "Executable nodes that make up the workflow.",
+          "items": { "$ref": "#/$defs/Node" }
+        },
+        "edges": {
+          "type": "array",
+          "description": "Direct edges between nodes (unconditional control flow).",
+          "items": { "$ref": "#/$defs/Edge" }
+        },
+        "conditional_edges": {
+          "type": "array",
+          "description": "Conditional routing edges evaluated after a node finishes.",
+          "items": { "$ref": "#/$defs/ConditionalEdge" }
+        },
+        "state_variables": {
+          "type": "array",
+          "description": "Workflow-level state variables declared by the author.",
+          "items": { "$ref": "#/$defs/StateVariable" }
+        },
+        "start_node_id": {
+          "type": "string",
+          "description": "ID of the visual start node (usually builtin.start); the executable entry point is derived from its outgoing edge."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Arbitrary workflow-level metadata (tags, owner, etc.).",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "BaseNode": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique node identifier within the workflow."
+        },
+        "label": {
+          "type": "string",
+          "description": "Optional UI label for this node."
+        },
+        "node_version": {
+          "type": "string",
+          "description": "Optional component version."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of what this node does."
+        }
+      },
+      "additionalProperties": false
+    },
+    "Node": {
+      "allOf": [
+        { "$ref": "#/$defs/BaseNode" },
+        {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["node_type"],
+              "properties": {
+                "node_type": {
+                  "type": "string",
+                  "const": "builtin.start",
+                  "description": "Start node; marks the visual entry of the workflow."
+                },
+                "config": {
+                  "type": "object",
+                  "description": "Start node has no configurable fields.",
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": ["node_type", "config"],
+              "properties": {
+                "node_type": {
+                  "type": "string",
+                  "const": "builtin.llmagent",
+                  "description": "LLM-backed agent node."
+                },
+                "config": { "$ref": "#/$defs/AgentConfig" }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": ["node_type", "config"],
+              "properties": {
+                "node_type": {
+                  "type": "string",
+                  "const": "builtin.end",
+                  "description": "End node; chooses the final workflow output."
+                },
+                "config": { "$ref": "#/$defs/EndConfig" }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": ["node_type", "config"],
+              "properties": {
+                "node_type": {
+                  "type": "string",
+                  "const": "builtin.mcp",
+                  "description": "MCP node; calls a Model Context Protocol server/tool."
+                },
+                "config": { "$ref": "#/$defs/MCPConfig" }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": ["node_type", "config"],
+              "properties": {
+                "node_type": {
+                  "type": "string",
+                  "const": "builtin.while",
+                  "description": "While control node with an embedded loop body."
+                },
+                "config": { "$ref": "#/$defs/WhileConfig" }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": ["node_type", "config"],
+              "properties": {
+                "node_type": {
+                  "type": "string",
+                  "const": "builtin.user_approval",
+                  "description": "User approval node; pauses execution until a decision is provided."
+                },
+                "config": { "$ref": "#/$defs/UserApprovalConfig" }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": ["node_type", "config"],
+              "properties": {
+                "node_type": {
+                  "type": "string",
+                  "const": "builtin.transform",
+                  "description": "Transform node; reshapes structured data via an expression."
+                },
+                "config": { "$ref": "#/$defs/TransformConfig" }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": ["node_type", "config"],
+              "properties": {
+                "node_type": {
+                  "type": "string",
+                  "const": "builtin.set_state",
+                  "description": "Set State node; assigns to workflow state variables."
+                },
+                "config": { "$ref": "#/$defs/SetStateConfig" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      ]
+    },
+    "AgentConfig": {
+      "type": "object",
+      "required": ["model_name"],
+      "properties": {
+        "model_name": {
+          "type": "string",
+          "description": "Name of the model to use (must exist in the ModelRegistry at runtime)."
+        },
+        "instruction": {
+          "type": "string",
+          "description": "System prompt / instruction for the agent."
+        },
+        "tools": {
+          "type": "array",
+          "description": "List of tool names available to this agent.",
+          "items": { "type": "string" }
+        },
+        "tool_sets": {
+          "type": "array",
+          "description": "List of tool set names attached to this agent.",
+          "items": { "type": "string" }
+        },
+        "mcp_tools": {
+          "type": "array",
+          "description": "List of MCP tool configurations.",
+          "items": {
+            "type": "object",
+            "required": ["transport"],
+            "properties": {
+              "transport": {
+                "type": "string",
+                "enum": ["stdio", "streamable_http", "sse"]
+              },
+              "command": {
+                "type": "string",
+                "description": "Executable command when transport=stdio."
+              },
+              "server_url": {
+                "type": "string",
+                "description": "Remote MCP server URL when using HTTP/SSE transports."
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "output_format": {
+          "type": "object",
+          "description": "Controls how the agent returns its response (e.g., text vs. JSON).",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "Output mode for this agent.",
+              "enum": ["text", "json"],
+              "default": "text"
+            },
+            "schema": {
+              "type": "object",
+              "description": "JSON Schema for structured output when type = \"json\".",
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 2.0
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "top_p": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "EndConfig": {
+      "type": "object",
+      "properties": {
+        "output_schema": {
+          "type": "object",
+          "description": "JSON Schema for the structured final output.",
+          "additionalProperties": true
+        },
+        "expr": {
+          "$ref": "#/$defs/Expression",
+          "description": "Expression that evaluates to the structured final output."
+        }
+      },
+      "additionalProperties": false
+    },
+    "TransformConfig": {
+      "type": "object",
+      "properties": {
+        "output_schema": {
+          "type": "object",
+          "description": "JSON Schema for the transformed output object.",
+          "additionalProperties": true
+        },
+        "expr": {
+          "$ref": "#/$defs/Expression",
+          "description": "Expression that evaluates to the transformed object."
+        }
+      },
+      "additionalProperties": false
+    },
+    "SetStateConfig": {
+      "type": "object",
+      "properties": {
+        "assignments": {
+          "type": "array",
+          "description": "List of {field, expr} objects describing state updates.",
+          "items": {
+            "type": "object",
+            "required": ["field", "expr"],
+            "properties": {
+              "field": { "type": "string" },
+              "expr": { "$ref": "#/$defs/Expression" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "UserApprovalConfig": {
+      "type": "object",
+      "description": "Configuration for a human-in-the-loop approval step. At runtime this node raises an interrupt and expects an external system to provide an approval_result string (typically \"approve\" or \"reject\"), which downstream conditions can read from state.approval_result.",
+      "required": ["message"],
+      "properties": {
+        "message": {
+          "type": "string",
+          "description": "Approval message shown to the user."
+        },
+        "auto_approve": {
+          "type": "boolean",
+          "description": "When true, skip the interrupt and treat the decision as approved (for demos/tests)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "WhileBody": {
+      "type": "object",
+      "required": ["nodes", "edges", "start_node_id", "exit_node_id"],
+      "properties": {
         "nodes": {
           "type": "array",
           "items": { "$ref": "#/$defs/Node" }
@@ -24,57 +354,67 @@
           "type": "array",
           "items": { "$ref": "#/$defs/ConditionalEdge" }
         },
-        "state_variables": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/StateVariable" }
+        "start_node_id": {
+          "type": "string",
+          "description": "ID of the first node executed when entering the loop body."
         },
-        "entry_point": { "type": "string" },
-        "metadata": {
-          "type": "object",
-          "additionalProperties": true
+        "exit_node_id": {
+          "type": "string",
+          "description": "ID of the node whose completion triggers evaluation of the loop condition."
         }
       },
       "additionalProperties": false
     },
-    "Node": {
+    "WhileConfig": {
       "type": "object",
-      "required": ["id", "node_type"],
+      "required": ["body", "condition"],
       "properties": {
-        "id": { "type": "string" },
-        "label": { "type": "string" },
-        "node_type": {
-          "type": "string",
-          "description": "Component name in registry (e.g., builtin.llmagent)."
-        },
-        "node_version": {
-          "type": "string",
-          "description": "Optional component version."
-        },
-        "config": {
-          "type": "object",
-          "description": "Component-specific configuration for this node instance.",
-          "additionalProperties": true
-        },
-        "description": { "type": "string" }
+        "body": { "$ref": "#/$defs/WhileBody" },
+        "condition": { "$ref": "#/$defs/Expression" },
+        "max_iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Optional safety cap on loop iterations."
+        }
       },
       "additionalProperties": false
     },
-    "StateVariable": {
+    "MCPConfig": {
       "type": "object",
-      "required": ["name"],
+      "description": "Configuration for a standalone MCP node that calls a single MCP tool.",
+      "required": ["server_url", "tool"],
       "properties": {
-        "name": { "type": "string" },
-        "kind": {
+        "server_url": {
           "type": "string",
-          "enum": ["string", "number", "boolean", "object", "array", "opaque"]
+          "description": "MCP server URL (e.g., https://mcp.example.com/mcp)."
         },
-        "json_schema": {
+        "tool": {
+          "type": "string",
+          "description": "MCP tool name to invoke (as declared by the MCP server)."
+        },
+        "transport": {
+          "type": "string",
+          "enum": ["streamable_http", "sse"],
+          "description": "Transport mechanism for MCP. STDIO is intentionally not exposed at the DSL level."
+        },
+        "require_approval": {
+          "type": "boolean",
+          "description": "When true, execution pauses before calling the MCP tool and requires explicit user approval."
+        },
+        "headers": {
           "type": "object",
-          "additionalProperties": true
+          "description": "Optional HTTP headers to include when connecting to the MCP server.",
+          "additionalProperties": {
+            "type": "string"
+          }
         },
-        "description": { "type": "string" },
-        "default": {},
-        "reducer": { "type": "string" }
+        "params": {
+          "type": "object",
+          "description": "Optional per-parameter expressions mapping from the node input object to MCP tool arguments. Keys are parameter names; values are CEL expressions evaluated in the MCP node input context (e.g., input.repoName).",
+          "additionalProperties": {
+            "$ref": "#/$defs/Expression"
+          }
+        }
       },
       "additionalProperties": false
     },
@@ -82,10 +422,22 @@
       "type": "object",
       "required": ["source", "target"],
       "properties": {
-        "id": { "type": "string" },
-        "source": { "type": "string" },
-        "target": { "type": "string" },
-        "label": { "type": "string" }
+        "id": {
+          "type": "string",
+          "description": "Optional edge identifier (used for tooling)."
+        },
+        "source": {
+          "type": "string",
+          "description": "Source node ID (or \"__start__\" for virtual start)."
+        },
+        "target": {
+          "type": "string",
+          "description": "Target node ID (or \"__end__\" for virtual end)."
+        },
+        "label": {
+          "type": "string",
+          "description": "Optional UI label for this edge."
+        }
       },
       "additionalProperties": false
     },
@@ -93,191 +445,97 @@
       "type": "object",
       "required": ["from", "condition"],
       "properties": {
-        "id": { "type": "string" },
-        "from": { "type": "string" },
-        "condition": { "$ref": "#/$defs/Condition" }
+        "id": {
+          "type": "string",
+          "description": "Optional identifier for this conditional edge."
+        },
+        "from": {
+          "type": "string",
+          "description": "Node ID where this condition is evaluated."
+        },
+        "condition": {
+          "$ref": "#/$defs/Condition"
+        }
       },
       "additionalProperties": false
     },
     "Condition": {
-      "oneOf": [
-        { "$ref": "#/$defs/ConditionBuiltin" },
-        { "$ref": "#/$defs/ConditionFunction" },
-        { "$ref": "#/$defs/ConditionToolRouting" }
-      ]
-    },
-    "ConditionBuiltin": {
       "type": "object",
-      "required": ["type", "cases"],
+      "required": ["cases"],
       "properties": {
-        "type": {
-          "const": "builtin"
-        },
         "cases": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/BuiltinCase" }
+          "description": "Ordered list of cases; the first predicate that evaluates to true wins.",
+          "items": { "$ref": "#/$defs/Case" }
         },
-        "default": { "type": "string" }
-      },
-      "additionalProperties": false
-    },
-    "BuiltinCase": {
-      "type": "object",
-      "required": ["condition", "target"],
-      "properties": {
-        "name": { "type": "string" },
-        "condition": { "$ref": "#/$defs/CaseCondition" },
-        "target": { "type": "string" }
-      },
-      "additionalProperties": false
-    },
-    "ConditionFunction": {
-      "type": "object",
-      "required": ["type", "function", "routes"],
-      "properties": {
-        "type": {
-          "const": "function"
-        },
-        "function": { "type": "string" },
-        "routes": {
-          "type": "object",
-          "additionalProperties": { "type": "string" }
-        },
-        "default": { "type": "string" }
-      },
-      "additionalProperties": false
-    },
-    "ConditionToolRouting": {
-      "type": "object",
-      "required": ["type", "tools_node", "fallback"],
-      "properties": {
-        "type": {
-          "const": "tool_routing"
-        },
-        "tools_node": { "type": "string" },
-        "fallback": { "type": "string" }
-      },
-      "additionalProperties": false
-    },
-    "CaseCondition": {
-      "type": "object",
-      "required": ["conditions"],
-      "properties": {
-        "conditions": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/ConditionRule" }
-        },
-        "logical_operator": {
+        "default": {
           "type": "string",
-          "enum": ["and", "or"],
-          "default": "and"
+          "description": "Optional default target node ID when no case matches."
         }
       },
       "additionalProperties": false
     },
-    "ConditionRule": {
+    "Case": {
       "type": "object",
-      "required": ["variable", "operator"],
-      "properties": {
-        "variable": { "type": "string" },
-        "operator": { "type": "string" },
-        "value": {}
-      },
-      "additionalProperties": false
-    },
-    "ComponentMetadata": {
-      "type": "object",
-      "description": "Component metadata describing a reusable building block in the DSL (inputs, outputs, and config schema). Editors use this to render forms and variable pickers.",
+      "required": ["predicate", "target"],
       "properties": {
         "name": {
           "type": "string",
-          "description": "Unique component name (e.g., builtin.llmagent)."
+          "description": "Optional label for this case (for debugging/UI)."
         },
-        "display_name": {
+        "predicate": {
+          "$ref": "#/$defs/Expression"
+        },
+        "target": {
           "type": "string",
-          "description": "Human-readable name shown in editors."
-        },
-        "description": {
-          "type": "string",
-          "description": "What this component does."
-        },
-        "category": {
-          "type": "string",
-          "description": "Logical grouping for palette organization (e.g., LLM, Tools, Control)."
-        },
-        "version": {
-          "type": "string",
-          "description": "Component version string."
-        },
-        "inputs": {
-          "type": "array",
-          "description": "Input parameters consumed by this component. Editors use this to know which values a node of this type can read.",
-          "items": { "$ref": "#/$defs/ParameterSchema" }
-        },
-        "outputs": {
-          "type": "array",
-          "description": "State fields produced by this component. Editors use this to expose variables for downstream nodes.",
-          "items": { "$ref": "#/$defs/ParameterSchema" }
-        },
-        "config_schema": {
-          "type": "array",
-          "description": "Schema for node.config parameters specific to this component.",
-          "items": { "$ref": "#/$defs/ParameterSchema" }
-        },
-        "meta": {
-          "type": "object",
-          "description": "Optional engine-agnostic metadata for higher layers (UI hints, tags, etc.).",
-          "additionalProperties": true
+          "description": "Target node ID when this predicate evaluates to true."
         }
       },
       "additionalProperties": false
     },
-    "ParameterSchema": {
+    "Expression": {
+      "type": "object",
+      "required": ["expression"],
+      "properties": {
+        "expression": {
+          "type": "string",
+          "description": "Expression source code string."
+        },
+        "format": {
+          "type": "string",
+          "description": "Expression format; currently only \"cel\" is supported.",
+          "enum": ["cel"],
+          "default": "cel"
+        }
+      },
+      "additionalProperties": false
+    },
+    "StateVariable": {
       "type": "object",
       "required": ["name"],
       "properties": {
         "name": {
           "type": "string",
-          "description": "Parameter name (e.g., messages, temperature, result)."
-        },
-        "display_name": {
-          "type": "string",
-          "description": "Human-readable label shown in editors."
-        },
-        "description": {
-          "type": "string",
-          "description": "What this parameter represents."
-        },
-        "type_id": {
-          "type": "string",
-          "description": "Logical DSL type identifier for editors (e.g., string, number, graph.messages, llmagent.output_parsed)."
+          "description": "State field name (e.g., \"counter\", \"greeting\")."
         },
         "kind": {
           "type": "string",
-          "description": "Coarse-grained kind for editor UX. Typical values: string, number, boolean, object, array, opaque.",
+          "description": "Coarse-grained type kind used by editors.",
           "enum": ["string", "number", "boolean", "object", "array", "opaque"]
-        },
-        "required": {
-          "type": "boolean",
-          "description": "Whether this parameter must be provided."
-        },
-        "default": {
-          "description": "Default value used when the parameter is omitted."
-        },
-        "enum": {
-          "type": "array",
-          "description": "Optional finite set of allowed values (for dropdowns).",
-          "items": {}
-        },
-        "placeholder": {
-          "type": "string",
-          "description": "Optional placeholder text for editor inputs."
         },
         "json_schema": {
           "type": "object",
-          "description": "Optional JSON Schema when this parameter represents a structured object. Used by editors and introspection APIs.",
+          "description": "Optional JSON Schema for structured variables.",
           "additionalProperties": true
+        },
+        "description": { "type": "string" },
+        "default": {
+          "description": "Default value applied when the workflow starts."
+        },
+        "reducer": {
+          "type": "string",
+          "description": "Reducer name used to merge concurrent writes (e.g., \"default\", \"append\", \"message\")."
         }
       },
       "additionalProperties": false

@@ -18,15 +18,15 @@
           {
             "field": "greeting",
             "expr": {
-              "expression": "\"Hello, {{state.user_input}}!\"",
-              "format": "json"
+              "expression": "\"Hello, \" + state.user_input + \"!\"",
+              "format": "cel"
             }
           },
           {
             "field": "counter",
             "expr": {
               "expression": "1",
-              "format": "json"
+              "format": "cel"
             }
           }
         ]
@@ -38,8 +38,8 @@
       "node_type": "builtin.end",
       "config": {
         "expr": {
-          "expression": "{\"message\": \"Greeting and counter set in global state.\", \"greeting\": \"{{state.greeting}}\", \"counter\": \"{{state.counter}}\"}",
-          "format": "json"
+          "expression": "{ \"message\": \"Greeting and counter set in global state.\", \"greeting\": state.greeting, \"counter\": state.counter }",
+          "format": "cel"
         },
         "output_schema": {
           "type": "object",
@@ -87,5 +87,5 @@
     }
   ],
   "conditional_edges": [],
-  "entry_point": "start"
+  "start_node_id": "start"
 }

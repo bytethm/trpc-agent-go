@@ -14,7 +14,7 @@ import (
 
 	"trpc.group/trpc-go/trpc-agent-go/agent"
 	"trpc.group/trpc-go/trpc-agent-go/agent/llmagent"
-	"trpc.group/trpc-go/trpc-agent-go/dsl/condition"
+	dslcel "trpc.group/trpc-go/trpc-agent-go/dsl/cel"
 	"trpc.group/trpc-go/trpc-agent-go/dsl/registry"
 	"trpc.group/trpc-go/trpc-agent-go/event"
 	"trpc.group/trpc-go/trpc-agent-go/graph"
@@ -36,6 +36,39 @@ type Compiler struct {
 	reducerRegistry *registry.ReducerRegistry
 	agentRegistry   *registry.AgentRegistry
 	schemaInference *SchemaInference
+}
+
+// whileBodyConfig describes the nested subgraph that forms the body of a
+// builtin.while node. It mirrors a minimal Workflow shape (nodes/edges +
+// start/exit) but is scoped locally to the while node.
+type whileBodyConfig struct {
+	Nodes            []Node            `json:"nodes"`
+	Edges            []Edge            `json:"edges"`
+	ConditionalEdges []ConditionalEdge `json:"conditional_edges,omitempty"`
+	StartNodeID      string            `json:"start_node_id"`
+	ExitNodeID       string            `json:"exit_node_id"`
+}
+
+// whileConfig describes the DSL-level configuration for a builtin.while node
+// in the engine DSL. It is decoded from EngineNode.Config via JSON round-
+// tripping to keep the EngineNode struct simple.
+type whileConfig struct {
+	Body      whileBodyConfig `json:"body"`
+	Condition Expression      `json:"condition"`
+}
+
+// whileExpansion contains the preprocessed information needed by the compiler
+// to expand a builtin.while node into concrete nodes/edges and a conditional
+// back-edge in the underlying StateGraph.
+type whileExpansion struct {
+	BodyEntry string
+	BodyExit  string
+	AfterNode string
+	Cond      Expression
+
+	BodyNodes            []Node
+	BodyEdges            []Edge
+	BodyConditionalEdges []ConditionalEdge
 }
 
 // NewCompiler creates a new DSL compiler.
@@ -112,15 +145,26 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 		return nil, fmt.Errorf("workflow is nil")
 	}
 
-	// Detect builtin.start node (if present) so we can map it to the real
-	// graph entry point. There should be at most one such node.
+	// Step 0: Expand structural builtin.while nodes. While is represented as
+	// a nested subgraph in the engine DSL but compiled into a flat set of
+	// nodes/edges plus a conditional back-edge in the underlying StateGraph.
+	expandedWorkflow, whileMeta, err := c.expandWhile(workflow)
+	if err != nil {
+		return nil, fmt.Errorf("while expansion failed: %w", err)
+	}
+	workflow = expandedWorkflow
+
+	// Detect builtin.start / builtin.end nodes (if present) so we can map
+	// them to the real graph entry/finish points. There should be at most
+	// one builtin.start node.
 	var startNodeID string
 	var endNodeIDs []string
+
 	for _, node := range workflow.Nodes {
-		if node.EngineNode.NodeType == "builtin.start" {
+		switch node.EngineNode.NodeType {
+		case "builtin.start":
 			startNodeID = node.ID
-		}
-		if node.EngineNode.NodeType == "builtin.end" {
+		case "builtin.end":
 			endNodeIDs = append(endNodeIDs, node.ID)
 		}
 	}
@@ -136,9 +180,9 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 
 	// Step 3: Add all nodes
 	for _, node := range workflow.Nodes {
-		// builtin.start is a structural DSL node and typically does not
-		// correspond to a real executable node in the StateGraph. The actual
-		// entry point will be derived from its outgoing edge below.
+		// builtin.start is a structural DSL node and does not correspond to a
+		// real executable node in the StateGraph. The actual entry point is
+		// derived from its outgoing edge.
 		if node.EngineNode.NodeType == "builtin.start" {
 			continue
 		}
@@ -172,21 +216,51 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 
 	// Step 5: Add conditional edges
 	for _, condEdge := range workflow.ConditionalEdges {
-		// Handle tool_routing specially
-		if condEdge.Condition.Type == "tool_routing" {
-			if err := c.addToolRoutingEdge(stateGraph, condEdge); err != nil {
-				return nil, fmt.Errorf("failed to add tool routing edge %s: %w", condEdge.ID, err)
-			}
-			continue
-		}
-
 		// Handle regular conditional edges
 		condFunc, err := c.createConditionalFunc(condEdge)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conditional edge %s: %w", condEdge.ID, err)
 		}
 
-		stateGraph.AddConditionalEdges(condEdge.From, condFunc, condEdge.Condition.Routes)
+		// For builtin conditions, the ConditionalFunc returns the concrete
+		// target node ID, so we pass nil as the path map.
+		stateGraph.AddConditionalEdges(condEdge.From, condFunc, nil)
+	}
+
+	// Step 5.5: Expand builtin.while semantics into conditional edges on the
+	// underlying StateGraph. For each while node, we add a conditional edge
+	// from body_exit that either routes back to body_entry (continue) or to
+	// the node that originally followed the while node (break).
+	for whileID, exp := range whileMeta {
+		exp := exp // capture loop variable
+		if exp.BodyExit == "" || exp.BodyEntry == "" || exp.AfterNode == "" {
+			return nil, fmt.Errorf("while node %s has incomplete expansion metadata", whileID)
+		}
+		if strings.TrimSpace(exp.Cond.Expression) == "" {
+			return nil, fmt.Errorf("while node %s has empty condition expression", whileID)
+		}
+
+		condExpr := exp.Cond.Expression
+
+		condFunc := func(ctx context.Context, state graph.State) (string, error) {
+			// Build the input view from the body exit node so that CEL
+			// expressions can use input.output_parsed.*, mirroring the
+			// OpenAI workflow semantics.
+			input := buildNodeInputView(state, exp.BodyExit)
+
+			ok, err := dslcel.EvalBool(condExpr, state, input)
+			if err != nil {
+				return "", fmt.Errorf("while condition evaluation failed: %w", err)
+			}
+			if ok {
+				// Continue: jump back to body_entry.
+				return exp.BodyEntry, nil
+			}
+			// Break: jump to the node that was originally connected after the while node.
+			return exp.AfterNode, nil
+		}
+
+		stateGraph.AddConditionalEdges(exp.BodyExit, condFunc, nil)
 	}
 
 	// Step 6: Set entry point
@@ -197,7 +271,7 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 		}
 		stateGraph.SetEntryPoint(firstNodeID)
 	} else {
-		stateGraph.SetEntryPoint(workflow.EntryPoint)
+		stateGraph.SetEntryPoint(workflow.StartNodeID)
 	}
 
 	// Step 7: Set finish points based on builtin.end nodes (if any). Each
@@ -214,6 +288,119 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 	}
 
 	return compiledGraph, nil
+}
+
+// buildWhileExpansion preprocesses a builtin.while node and its surrounding
+// edges into a whileExpansion structure used by the compiler.
+func (c *Compiler) buildWhileExpansion(node Node, edges []Edge, nodeIDs map[string]bool) (*whileExpansion, error) {
+	engine := node.EngineNode
+
+	rawCfg := engine.Config
+	if rawCfg == nil {
+		return nil, fmt.Errorf("config is required for builtin.while")
+	}
+
+	// Decode config map into whileConfig using JSON round-tripping.
+	data, err := json.Marshal(rawCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal builtin.while config: %w", err)
+	}
+	var cfg whileConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal builtin.while config: %w", err)
+	}
+
+	// Validate loop body
+	body := cfg.Body
+	if len(body.Nodes) == 0 {
+		return nil, fmt.Errorf("body.nodes must contain at least one node")
+	}
+	if strings.TrimSpace(body.StartNodeID) == "" {
+		return nil, fmt.Errorf("body.start_node_id is required for builtin.while")
+	}
+	if strings.TrimSpace(body.ExitNodeID) == "" {
+		return nil, fmt.Errorf("body.exit_node_id is required for builtin.while")
+	}
+
+	// Build a local index of body node IDs and ensure they do not conflict
+	// with existing top-level nodes.
+	bodyNodeIDs := make(map[string]bool, len(body.Nodes))
+	for _, n := range body.Nodes {
+		if strings.TrimSpace(n.ID) == "" {
+			return nil, fmt.Errorf("body node has empty id")
+		}
+		if bodyNodeIDs[n.ID] {
+			return nil, fmt.Errorf("duplicate node id %q in while body", n.ID)
+		}
+		if nodeIDs[n.ID] {
+			return nil, fmt.Errorf("while body node id %q conflicts with existing workflow node", n.ID)
+		}
+		bodyNodeIDs[n.ID] = true
+	}
+
+	if !bodyNodeIDs[body.StartNodeID] {
+		return nil, fmt.Errorf("body.start_node_id %q does not reference a node in body.nodes", body.StartNodeID)
+	}
+	if !bodyNodeIDs[body.ExitNodeID] {
+		return nil, fmt.Errorf("body.exit_node_id %q does not reference a node in body.nodes", body.ExitNodeID)
+	}
+
+	// Validate body edges reference only body nodes.
+	for _, e := range body.Edges {
+		if strings.TrimSpace(e.Source) == "" || strings.TrimSpace(e.Target) == "" {
+			return nil, fmt.Errorf("while body edge has empty source or target")
+		}
+		if !bodyNodeIDs[e.Source] {
+			return nil, fmt.Errorf("while body edge source %q is not a body node", e.Source)
+		}
+		if !bodyNodeIDs[e.Target] {
+			return nil, fmt.Errorf("while body edge target %q is not a body node", e.Target)
+		}
+	}
+
+	// (Optional) validate that conditional edges originate from body nodes.
+	for _, ce := range body.ConditionalEdges {
+		if strings.TrimSpace(ce.From) == "" {
+			return nil, fmt.Errorf("while body conditional edge has empty from")
+		}
+		if !bodyNodeIDs[ce.From] {
+			return nil, fmt.Errorf("while body conditional edge 'from' %q is not a body node", ce.From)
+		}
+	}
+
+	// Resolve the single "after" node from outgoing edges of the while node.
+	var afterNode string
+	for _, e := range edges {
+		if e.Source != node.ID {
+			continue
+		}
+		if afterNode == "" {
+			afterNode = e.Target
+		} else if afterNode != e.Target {
+			return nil, fmt.Errorf("builtin.while node %s has multiple outgoing edges (%s, %s)", node.ID, afterNode, e.Target)
+		}
+	}
+	if strings.TrimSpace(afterNode) == "" {
+		return nil, fmt.Errorf("builtin.while node %s must have exactly one outgoing edge", node.ID)
+	}
+
+	// Build a condition.CaseCondition for evaluation. We normalize variable
+	// paths using the same rules as builtin conditions so that shortcuts
+	// like input.* and state.* can be used. For the CEL-based while
+	// condition this simply means ensuring an expression string is present.
+	if strings.TrimSpace(cfg.Condition.Expression) == "" {
+		return nil, fmt.Errorf("condition.expression is required for builtin.while")
+	}
+
+	return &whileExpansion{
+		BodyEntry:           body.StartNodeID,
+		BodyExit:            body.ExitNodeID,
+		AfterNode:           afterNode,
+		Cond:                cfg.Condition,
+		BodyNodes:           body.Nodes,
+		BodyEdges:           body.Edges,
+		BodyConditionalEdges: body.ConditionalEdges,
+	}, nil
 }
 
 // resolveStartSuccessor finds the unique successor of the builtin.start node
@@ -239,6 +426,43 @@ func resolveStartSuccessor(startNodeID string, edges []Edge) (string, error) {
 	return successor, nil
 }
 
+// buildNodeInputView constructs the "input" object exposed to CEL expressions
+// for conditional routing and while conditions. It currently mirrors the
+// structured per-node cache stored under state["node_structured"][nodeID],
+// allowing expressions such as input.output_parsed.classification.
+func buildNodeInputView(state graph.State, nodeID string) map[string]any {
+	input := map[string]any{}
+	if nodeID == "" {
+		return input
+	}
+
+	raw, ok := state["node_structured"]
+	if !ok {
+		return input
+	}
+
+	ns, ok := raw.(map[string]any)
+	if !ok {
+		return input
+	}
+
+	nodeRaw, ok := ns[nodeID]
+	if !ok {
+		return input
+	}
+
+	nodeMap, ok := nodeRaw.(map[string]any)
+	if !ok {
+		return input
+	}
+
+	for k, v := range nodeMap {
+		input[k] = v
+	}
+
+	return input
+}
+
 
 // createNodeFunc creates a NodeFunc for an engine-level node instance.
 func (c *Compiler) createNodeFunc(node Node) (graph.NodeFunc, error) {
@@ -252,6 +476,11 @@ func (c *Compiler) createNodeFunc(node Node) (graph.NodeFunc, error) {
 	// Handle Tools components specially (use AddToolsNode pattern)
 	if engine.NodeType == "builtin.tools" {
 		return c.createToolsNodeFunc(node)
+	}
+
+	// Handle standalone MCP components specially.
+	if engine.NodeType == "builtin.mcp" {
+		return c.createMCPNodeFunc(node)
 	}
 
 	// Handle LLMAgent components specially (dynamically create LLMAgent)
@@ -446,18 +675,127 @@ func (c *Compiler) createToolsNodeFunc(node Node) (graph.NodeFunc, error) {
 	return graph.NewToolsNodeFunc(tools), nil
 }
 
+// createMCPNodeFunc creates a NodeFunc for a standalone MCP node.
+// The MCP node calls a single MCP tool on a remote MCP server and exposes
+// the result under node_structured[nodeID].results for downstream nodes.
+func (c *Compiler) createMCPNodeFunc(node Node) (graph.NodeFunc, error) {
+	engine := node.EngineNode
+
+	rawServerURL, ok := engine.Config["server_url"].(string)
+	serverURL := strings.TrimSpace(rawServerURL)
+	if !ok || serverURL == "" {
+		return nil, fmt.Errorf("server_url is required in MCP node config")
+	}
+
+	rawToolName, ok := engine.Config["tool"].(string)
+	toolName := strings.TrimSpace(rawToolName)
+	if !ok || toolName == "" {
+		return nil, fmt.Errorf("tool is required in MCP node config")
+	}
+
+	transport := "streamable_http"
+	if t, ok := engine.Config["transport"].(string); ok && strings.TrimSpace(t) != "" {
+		transport = strings.TrimSpace(t)
+	}
+	if transport != "streamable_http" && transport != "sse" {
+		return nil, fmt.Errorf("unsupported MCP transport %q; expected \"streamable_http\" or \"sse\"", transport)
+	}
+
+	// Optional headers from config (JSON decoded as map[string]any).
+	var headers map[string]any
+	if h, ok := engine.Config["headers"].(map[string]any); ok && len(h) > 0 {
+		headers = h
+	}
+
+	// Build configuration map compatible with createMCPToolSet.
+	mcpCfg := map[string]any{
+		"transport":  transport,
+		"server_url": serverURL,
+	}
+	if headers != nil {
+		mcpCfg["headers"] = headers
+	}
+
+	mcpToolSet, err := c.createMCPToolSet(mcpCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create MCP toolset for node %s: %w", node.ID, err)
+	}
+
+	// Capture params configuration (if any).
+	var params map[string]any
+	if p, ok := engine.Config["params"].(map[string]any); ok && len(p) > 0 {
+		params = p
+	}
+
+	return func(ctx context.Context, state graph.State) (interface{}, error) {
+		// Resolve the MCP tool from the toolset.
+		var selected tool.Tool
+		for _, t := range mcpToolSet.Tools(ctx) {
+			if decl := t.Declaration(); decl != nil && decl.Name == toolName {
+				selected = t
+				break
+			}
+		}
+		if selected == nil {
+			return nil, fmt.Errorf("MCP tool %q not found on server %q", toolName, serverURL)
+		}
+
+		callable, ok := selected.(tool.CallableTool)
+		if !ok {
+			return nil, fmt.Errorf("MCP tool %q is not callable", toolName)
+		}
+
+		// Build arguments object by evaluating params expressions (if configured).
+		args := make(map[string]any)
+		if params != nil {
+			for name, raw := range params {
+				exprMap, ok := raw.(map[string]any)
+				if !ok {
+					continue
+				}
+				exprStr, _ := exprMap["expression"].(string)
+				if strings.TrimSpace(exprStr) == "" {
+					continue
+				}
+
+				value, err := dslcel.Eval(exprStr, state, nil)
+				if err != nil {
+					return nil, fmt.Errorf("failed to evaluate MCP param %q: %w", name, err)
+				}
+				args[name] = value
+			}
+		}
+
+		payload, err := json.Marshal(args)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal MCP tool arguments: %w", err)
+		}
+
+		result, err := callable.Call(ctx, payload)
+		if err != nil {
+			return nil, fmt.Errorf("MCP tool %q call failed: %w", toolName, err)
+		}
+
+		if result == nil {
+			return nil, nil
+		}
+
+		// Attach the MCP result under node_structured[nodeID].results so that
+		// downstream nodes can consume it via nodes.<id>.results or
+		// state.node_structured.<id>.results.
+		return graph.State{
+			"node_structured": map[string]any{
+				node.ID: map[string]any{
+					"results": result,
+				},
+			},
+		}, nil
+	}, nil
+}
+
 // createConditionalFunc creates a ConditionalFunc for a conditional edge.
 func (c *Compiler) createConditionalFunc(condEdge ConditionalEdge) (graph.ConditionalFunc, error) {
-	condition := condEdge.Condition
-
-	switch condition.Type {
-	case "builtin":
-		return c.createBuiltinCondition(condEdge)
-	case "function":
-		return c.createFunctionCondition(condition)
-	default:
-		return nil, fmt.Errorf("unsupported condition type: %s", condition.Type)
-	}
+	return c.createBuiltinCondition(condEdge)
 }
 
 // createBuiltinCondition creates a condition function from a builtin structured condition.
@@ -469,32 +807,21 @@ func (c *Compiler) createBuiltinCondition(condEdge ConditionalEdge) (graph.Condi
 	}
 
 	// Create a local copy of cases to avoid capturing a mutable slice from the caller.
-	cases := make([]BuiltinCase, len(cond.Cases))
+	cases := make([]Case, len(cond.Cases))
 	copy(cases, cond.Cases)
 
 	fromNodeID := condEdge.From
 
 	return func(ctx context.Context, state graph.State) (string, error) {
+		input := buildNodeInputView(state, fromNodeID)
+
 		for idx, kase := range cases {
-			// Convert CaseCondition to condition.CaseCondition
-			if len(kase.Condition.Conditions) == 0 {
+			expr := strings.TrimSpace(kase.Predicate.Expression)
+			if expr == "" {
 				continue
 			}
 
-			builtinCond := &condition.CaseCondition{
-				Conditions:      make([]condition.ConditionRule, len(kase.Condition.Conditions)),
-				LogicalOperator: kase.Condition.LogicalOperator,
-			}
-			for i, rule := range kase.Condition.Conditions {
-				normalizedVar := normalizeConditionVariable(rule.Variable, fromNodeID)
-				builtinCond.Conditions[i] = condition.ConditionRule{
-					Variable: normalizedVar,
-					Operator: rule.Operator,
-					Value:    rule.Value,
-				}
-			}
-
-			ok, err := condition.Evaluate(ctx, state, builtinCond)
+			ok, err := dslcel.EvalBool(expr, state, input)
 			if err != nil {
 				return "", fmt.Errorf("failed to evaluate builtin case %d: %w", idx, err)
 			}
@@ -514,58 +841,6 @@ func (c *Compiler) createBuiltinCondition(condEdge ConditionalEdge) (graph.Condi
 		}
 		return "", fmt.Errorf("no builtin case matched and no default specified")
 	}, nil
-}
-
-// createFunctionCondition creates a condition function from a function reference.
-func (c *Compiler) createFunctionCondition(condition Condition) (graph.ConditionalFunc, error) {
-	// Get the function component from registry
-	functionRef := condition.Function
-	if functionRef == "" {
-		return nil, fmt.Errorf("function reference is empty")
-	}
-
-	component, exists := c.registry.Get(functionRef)
-	if !exists {
-		return nil, fmt.Errorf("function '%s' not found in registry", functionRef)
-	}
-
-	return func(ctx context.Context, state graph.State) (string, error) {
-		// Execute the function component
-		result, err := component.Execute(ctx, registry.ComponentConfig{}, state)
-		if err != nil {
-			return "", fmt.Errorf("error executing function '%s': %w", functionRef, err)
-		}
-
-		// result should be graph.State (map[string]any), extract route from it
-		resultState, ok := result.(graph.State)
-		if !ok {
-			return "", fmt.Errorf("function '%s' did not return graph.State", functionRef)
-		}
-
-		if route, ok := resultState["route"].(string); ok {
-			return route, nil
-		}
-
-		return "", fmt.Errorf("function '%s' did not return a route in state", functionRef)
-	}, nil
-}
-
-// addToolRoutingEdge adds a tool routing edge (AddToolsConditionalEdges pattern).
-func (c *Compiler) addToolRoutingEdge(stateGraph *graph.StateGraph, condEdge ConditionalEdge) error {
-	toolsNode := condEdge.Condition.ToolsNode
-	fallback := condEdge.Condition.Fallback
-
-	if toolsNode == "" {
-		return fmt.Errorf("tools_node is required for tool_routing")
-	}
-	if fallback == "" {
-		return fmt.Errorf("fallback is required for tool_routing")
-	}
-
-	// Use AddToolsConditionalEdges from graph package
-	stateGraph.AddToolsConditionalEdges(condEdge.From, toolsNode, fallback)
-
-	return nil
 }
 
 // normalizeConditionVariable rewrites a human-friendly variable used in

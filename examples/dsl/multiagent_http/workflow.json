@@ -88,14 +88,9 @@
         "cases": [
           {
             "name": "http",
-            "condition": {
-              "conditions": [
-                {
-                  "variable": "input.output_parsed.classification",
-                  "operator": "==",
-                  "value": "http"
-                }
-              ]
+            "predicate": {
+              "expression": "input.output_parsed.classification == \"http\"",
+              "format": "cel"
             },
             "target": "http_request"
           }
@@ -104,5 +99,5 @@
       }
     }
   ],
-  "entry_point": "start"
+  "start_node_id": "start"
 }

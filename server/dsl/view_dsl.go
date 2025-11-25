@@ -12,7 +12,7 @@ type ViewWorkflow struct {
 	Nodes            []ViewNode                 `json:"nodes"`
 	Edges            []dsl.Edge                 `json:"edges"`
 	ConditionalEdges []dsl.ConditionalEdge      `json:"conditional_edges,omitempty"`
-	EntryPoint       string                     `json:"entry_point"`
+	StartNodeID      string                     `json:"start_node_id"`
 	FinishPoint      string                     `json:"finish_point,omitempty"`
 	Metadata         map[string]interface{}     `json:"metadata,omitempty"`
 }
@@ -61,7 +61,7 @@ func (vw *ViewWorkflow) ToEngineWorkflow() *dsl.Workflow {
 		Nodes:            nodes,
 		Edges:            vw.Edges,
 		ConditionalEdges: vw.ConditionalEdges,
-		EntryPoint:       vw.EntryPoint,
+		StartNodeID:      vw.StartNodeID,
 		Metadata:         vw.Metadata,
 	}
 }

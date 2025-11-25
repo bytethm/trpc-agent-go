@@ -2,7 +2,7 @@
   "name": "llmagent_mcp_example",
   "description": "Example workflow demonstrating LLMAgent with MCP tools via stdio",
   "version": "1.0.0",
-  "entry_point": "start",
+  "start_node_id": "start",
   "nodes": [
     {
       "id": "start",

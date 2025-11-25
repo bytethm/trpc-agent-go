@@ -16,44 +16,23 @@ The engine-level schemas live in `dsl/schema/engine_dsl.schema.json`.
 - **Workflow**
   - Root object edited and sent by the frontend.
   - Fields: `version`, `name`, `description`, `nodes`, `edges`,
-    `conditional_edges`, `state_variables`, `entry_point`, `metadata`.
-
-- **ComponentMetadata**
-  - Returned by `/api/v1/components`.
-  - Describes a reusable node type: name, category, and I/O.
-
-- **ParameterSchema**
-  - Used inside `ComponentMetadata.inputs/outputs/config_schema`.
-  - Frontend should primarily use:
-    - `name`, `display_name`, `description`
-    - `type_id`, `kind`
-    - `json_schema` (for structured objects)
+    `conditional_edges`, `state_variables`, `start_node_id`, `metadata`.
+  - Valid values for `node.node_type` and the shape of each `node.config`
+    are statically enumerated in `$defs.Node` via `oneOf` branches. The
+    editor can treat this schema as the single source of truth for which
+    node types exist and how they are configured.
 
 ## High-level flow
 
 From an editor's point of view, a typical session looks like:
 
-1. **Load component catalog**
-2. **User edits a draft workflow (in memory)**
-3. **Ask backend for schema/variable introspection as needed**
-4. **Validate the draft workflow**
-5. **Save / publish the workflow**
-6. **Execute the workflow**
+1. **User edits a draft workflow (in memory)**
+2. **Ask backend for schema/variable/connection introspection as needed**
+3. **Validate the draft workflow**
+4. **Save / publish the workflow**
+5. **Execute the workflow**
 
-### 1. Load components
-
-- **API**: `GET /api/v1/components`
-- **Request**: none
-- **Response**: `ComponentMetadata[]`
-
-Usage:
-
-- Populate the palette of available nodes (grouped by `category`).
-- Use `config_schema` to render the right-hand configuration panel for each
-  `node_type`.
-- Use `inputs/outputs` as hints for variable pickers and UI affordances.
-
-### 2. Maintain a draft Workflow on the frontend
+### 1. Maintain a draft Workflow on the frontend
 
 The editor maintains a **draft workflow JSON** in memory. It should conform to
 `$defs.Workflow` from `dsl/schema/engine_dsl.schema.json` as closely as
@@ -177,6 +156,72 @@ Frontend guidance:
 - Use `kind` / `json_schema` for UI decisions (icons, editors, tree views),
   not for reconstructing engine internals.
 
+#### 3.3 Inspect a connection between two nodes
+
+When the user draws an edge between nodes (for example, Agent → MCP), the
+editor may want to know whether the connection is type-compatible, and why it
+is invalid if not.
+
+- **API**: `POST /api/v1/workflows/edges/inspect`
+- **Request body**:
+
+  ```jsonc
+  {
+    "workflow": { /* draft Workflow JSON */ },
+    "edge": {
+      "source_node_id": "Agent1",
+      "target_node_id": "MCP1"
+    }
+  }
+  ```
+
+- **Response**: `EdgeInspectionResult`
+
+  ```jsonc
+  {
+    "valid": false,
+    "errors": [
+      {
+        "code": "missing_field",
+        "message": "MCP requires input.repoName, but Agent doesn't provide repoName",
+        "path": "input.repoName"
+      }
+    ],
+    "source_output_schema": {
+      "type": "object",
+      "properties": {
+        "output_text": { "type": "string" },
+        "output_parsed": {
+          "type": "object",
+          "properties": { /* user-defined schema from Agent output_format.schema */ }
+        }
+      }
+    },
+    "target_input_schema": {
+      "type": "object",
+      "properties": {
+        "repoName": { "type": "string" }
+      },
+      "required": ["repoName"]
+    }
+  }
+  ```
+
+Semantics (example):
+
+- For `builtin.llmagent`:
+  - `source_output_schema` always has at least:
+    - `output_text: string`
+    - `output_parsed: object` whose inner schema is taken from
+      `AgentConfig.output_format.schema` when `type = "json"`.
+- For `builtin.mcp`:
+  - `target_input_schema` is derived from the selected MCP tool's input schema.
+
+Editor usage:
+
+- Display the source/target schemas in an “Inspect connection” panel.
+- Show inline errors when the connection is invalid (e.g., missing fields).
+
 ### 4. Validate draft workflow
 
 - **API**: `POST /api/v1/workflows/validate`
@@ -188,14 +233,14 @@ Frontend guidance:
   "valid": false,
   "errors": [
     { "field": "nodes[2].node_type", "message": "component builtin.foo not found in registry" },
-    { "field": "entry_point", "message": "entry point start does not exist" }
+    { "field": "start_node_id", "message": "start_node_id start does not exist" }
   ]
 }
 ```
 
 Backend checks:
 
-- Workflow structure (version/name/nodes/edges/entry_point).
+- Workflow structure (version/name/nodes/edges/start_node_id).
 - Node/component references (node_type exists in registry).
 - Special rules for builtin nodes (e.g., `builtin.start` uniqueness and edges).
 - State variable rules (e.g., `builtin.set_state` assignments must target

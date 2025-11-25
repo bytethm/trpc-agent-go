@@ -10,10 +10,10 @@ package builtin
 
 import (
 	"context"
-	"encoding/json"
 	"reflect"
 	"strings"
 
+	dslcel "trpc.group/trpc-go/trpc-agent-go/dsl/cel"
 	"trpc.group/trpc-go/trpc-agent-go/dsl/registry"
 	"trpc.group/trpc-go/trpc-agent-go/graph"
 )
@@ -28,11 +28,11 @@ func init() {
 // into a new structured object and writes it into state as a regular output
 // field so downstream nodes can consume it.
 //
-// The current implementation treats the expression as a JSON literal encoded
-// as a string and reuses the HTTP/template renderer for string leaves:
-// string values may contain {{state.*}} / {{nodes.*}} placeholders. This is a
-// placeholder for a future expression engine (e.g., CEL) and allows the DSL
-// shape to be stabilized ahead of the engine implementation.
+// The expression is a CEL expression evaluated in an environment that
+// exposes:
+//   - state: graph.State (global workflow state)
+//   - input: JSON-like object for future extensibility (currently nil for
+//            builtin.transform).
 type TransformComponent struct{}
 
 // Metadata describes the Transform component.
@@ -75,7 +75,7 @@ func (c *TransformComponent) Metadata() registry.ComponentMetadata {
 			{
 				Name:        "expr",
 				DisplayName: "Transform Expression",
-				Description: "Expression that evaluates to the transformed object. Currently expects a JSON string; string leaves may contain {{state.*}} / {{nodes.*}} placeholders.",
+				Description: "Expression that evaluates to the transformed object. The expression is written in CEL and can reference state.* variables.",
 				Type:        "map[string]any",
 				TypeID:      "object",
 				Kind:        "object",
@@ -108,20 +108,17 @@ func (c *TransformComponent) Execute(ctx context.Context, config registry.Compon
 		return graph.State{}, nil
 	}
 
-	// Parse the expression as JSON. This mirrors the current End component
-	// behavior and is a stand-in for a future expression engine.
-	var exprValue any
-	if err := json.Unmarshal([]byte(exprStr), &exprValue); err != nil {
-		// If parsing fails, be tolerant and leave state unchanged.
+	// Evaluate the expression using CEL with the current graph.State bound
+	// to the "state" variable. For builtin.transform we do not currently
+	// provide a structured "input" object, so it is nil.
+	value, err := dslcel.Eval(exprStr, state, nil)
+	if err != nil {
+		// Be tolerant on errors: skip the transform but do not fail the
+		// entire node execution.
 		return graph.State{}, nil
 	}
 
-	// Recursively render the parsed JSON value, supporting the same placeholder
-	// syntax as builtin.http_request and builtin.end for string leaves.
-	rendered := renderStructuredTemplate(exprValue, state)
-
 	return graph.State{
-		"result": rendered,
+		"result": value,
 	}, nil
 }
-

@@ -25,7 +25,7 @@ Key top‑level definitions inside `$defs`:
     - `edges` – array of `Edge` objects (direct connections).
     - `conditional_edges` – array of `ConditionalEdge` objects (if/else, tool routing, etc.).
     - `state_variables` – workflow‑level state declarations (global variables).
-    - `entry_point` – ID of the starting node (usually `builtin.start`).
+- `start_node_id` – ID of the visual start node (usually `builtin.start`); the executable entry point is derived from its outgoing edge.
     - `metadata` – arbitrary workflow‑level metadata (engine‑agnostic).
 
 - **`Node`**
@@ -217,7 +217,6 @@ Built‑in components are implemented under `dsl/registry/builtin`. Each compone
   - `config_schema`:
     - Minimal or empty; primarily used for debugging and pipeline wiring.
 
-For the authoritative and always up‑to‑date view of each built‑in’s I/O and config schema, prefer querying:
+For the authoritative and always up‑to‑date view of the **execution DSL** shape, the single source of truth is:
 
-- `GET /api/v1/components`  
-  which returns all `ComponentMetadata` (including built‑ins), shaped according to `ComponentMetadata` / `ParameterSchema` in `engine_dsl.schema.json`.
+- `dsl/schema/engine_dsl.schema.json` – engine‑level Workflow / Node / Edge / ConditionalEdge / StateVariable, plus builtin node configs such as `AgentConfig`, `WhileConfig`, `UserApprovalConfig`, `TransformConfig`, `SetStateConfig`, and `MCPConfig`.

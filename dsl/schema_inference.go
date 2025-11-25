@@ -151,27 +151,9 @@ func (si *SchemaInference) InferSchema(workflow *Workflow) (*graph.StateSchema, 
 	if err != nil {
 		return nil, err
 	}
-
-	schema := graph.NewStateSchema()
-
-	// Add framework built-in fields first
-	si.addBuiltinFields(schema)
-
-	// Add workflow-declared state variables.
+	schema := si.buildSchemaFromParams(paramMap)
+	// Enrich with workflow-declared state variables (e.g., for builtin.set_state).
 	si.addDeclaredStateVariables(schema, workflow, nil)
-
-	// Convert parameter map to StateSchema
-	for name, param := range paramMap {
-		reducer := si.getReducer(param.Reducer)
-
-		schema.AddField(name, graph.StateField{
-			Type:     param.GoType,
-			Reducer:  reducer,
-			Required: param.Required,
-			Default:  param.DefaultFunc,
-		})
-	}
-
 	return schema, nil
 }
 
@@ -202,11 +184,25 @@ func (si *SchemaInference) InferSchemaAndUsage(workflow *Workflow) (*graph.State
 	// Enrich parameter info with component-level context where useful (e.g., structured_output).
 	si.attachComponentContext(workflow, paramMap)
 
+	schema := si.buildSchemaFromParams(paramMap)
+	usage := si.buildUsageFromParams(paramMap)
+
+	// Enrich schema and usage with workflow-declared state variables so that
+	// editor-facing variables include explicitly declared fields (e.g., via Start).
+	si.addDeclaredStateVariables(schema, workflow, usage)
+
+	return schema, usage, nil
+}
+
+// buildSchemaFromParams constructs a StateSchema from a collected parameter map.
+// It is intentionally focused on execution semantics and does not attach any
+// editor-facing usage information.
+func (si *SchemaInference) buildSchemaFromParams(paramMap map[string]*ParameterInfo) *graph.StateSchema {
 	schema := graph.NewStateSchema()
+	// Add framework built-in fields first.
 	si.addBuiltinFields(schema)
 
-	usage := make(map[string]FieldUsage, len(paramMap))
-
+	// Convert parameter map to StateSchema.
 	for name, param := range paramMap {
 		reducer := si.getReducer(param.Reducer)
 
@@ -216,7 +212,17 @@ func (si *SchemaInference) InferSchemaAndUsage(workflow *Workflow) (*graph.State
 			Required: param.Required,
 			Default:  param.DefaultFunc,
 		})
+	}
+	return schema
+}
 
+// buildUsageFromParams constructs FieldUsage information from a collected
+// parameter map. It is used by higher layers (e.g., editors) to drive
+// variable pickers and type hints.
+func (si *SchemaInference) buildUsageFromParams(paramMap map[string]*ParameterInfo) map[string]FieldUsage {
+	usage := make(map[string]FieldUsage, len(paramMap))
+
+	for name, param := range paramMap {
 		fieldUsage := FieldUsage{
 			Name:       name,
 			Type:       param.GoType.String(),
@@ -242,17 +248,14 @@ func (si *SchemaInference) InferSchemaAndUsage(workflow *Workflow) (*graph.State
 					fieldUsage.Readers = append(fieldUsage.Readers, parts[1])
 				}
 			default:
-				// legacy tags ("input", "output") without node IDs are ignored for usage
+				// Legacy tags ("input", "output") without node IDs are ignored for usage.
 			}
 		}
 
 		usage[name] = fieldUsage
 	}
 
-	// Enrich schema and usage with workflow-declared state variables.
-	si.addDeclaredStateVariables(schema, workflow, usage)
-
-	return schema, usage, nil
+	return usage
 }
 
 // buildParameterMap collects all input/output parameters from components and DSL NodeIO

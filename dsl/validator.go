@@ -101,19 +101,19 @@ func (v *Validator) validateStructure(workflow *Workflow) error {
 		}
 	}
 
-	// Check entry point
-	if workflow.EntryPoint == "" {
-		return fmt.Errorf("workflow entry point is required")
+	// Check start node ID
+	if workflow.StartNodeID == "" {
+		return fmt.Errorf("workflow start_node_id is required")
 	}
-	if !nodeIDs[workflow.EntryPoint] {
-		return fmt.Errorf("entry point %s does not exist", workflow.EntryPoint)
+	if !nodeIDs[workflow.StartNodeID] {
+		return fmt.Errorf("start_node_id %s does not exist", workflow.StartNodeID)
 	}
 
-	// If a builtin.start node is present, the workflow entry point must be that
-	// node. The actual executable entry point will be derived from its outgoing
-	// edge by the compiler.
-	if startNodeID != "" && workflow.EntryPoint != startNodeID {
-		return fmt.Errorf("workflow entry point must be builtin.start node %s when present (got %s)", startNodeID, workflow.EntryPoint)
+	// If a builtin.start node is present, the workflow start_node_id must be
+	// that node. The actual executable entry point will be derived from its
+	// outgoing edge by the compiler.
+	if startNodeID != "" && workflow.StartNodeID != startNodeID {
+		return fmt.Errorf("workflow start_node_id must be builtin.start node %s when present (got %s)", startNodeID, workflow.StartNodeID)
 	}
 
 	// Validate edges
@@ -153,66 +153,25 @@ func (v *Validator) validateStructure(workflow *Workflow) error {
 			return fmt.Errorf("conditional edge %s: source node %s does not exist", condEdge.ID, condEdge.From)
 		}
 
-		// Validate condition
-		if condEdge.Condition.Type == "" {
-			return fmt.Errorf("conditional edge %s: condition type is required", condEdge.ID)
+		// Validate condition: ensure at least one case and each target exists.
+		if len(condEdge.Condition.Cases) == 0 {
+			return fmt.Errorf("conditional edge %s: condition requires at least one case", condEdge.ID)
 		}
-
-		switch condEdge.Condition.Type {
-		case "tool_routing":
-			// For tool_routing, validate tools_node and fallback.
-			if condEdge.Condition.ToolsNode == "" {
-				return fmt.Errorf("conditional edge %s: tools_node is required for tool_routing", condEdge.ID)
+		for idx, kase := range condEdge.Condition.Cases {
+			if strings.TrimSpace(kase.Predicate.Expression) == "" {
+				return fmt.Errorf("conditional edge %s: case %d predicate.expression is required", condEdge.ID, idx)
 			}
-			if !nodeIDs[condEdge.Condition.ToolsNode] {
-				return fmt.Errorf("conditional edge %s: tools_node %s does not exist",
-					condEdge.ID, condEdge.Condition.ToolsNode)
+			if kase.Target == "" {
+				return fmt.Errorf("conditional edge %s: case %d target is empty", condEdge.ID, idx)
 			}
-			if condEdge.Condition.Fallback == "" {
-				return fmt.Errorf("conditional edge %s: fallback is required for tool_routing", condEdge.ID)
+			if !nodeIDs[kase.Target] {
+				return fmt.Errorf("conditional edge %s: case %d target node %s does not exist",
+					condEdge.ID, idx, kase.Target)
 			}
-			if !nodeIDs[condEdge.Condition.Fallback] {
-				return fmt.Errorf("conditional edge %s: fallback node %s does not exist",
-					condEdge.ID, condEdge.Condition.Fallback)
-			}
-		case "builtin":
-			// For builtin, ensure at least one case and each target exists.
-			if len(condEdge.Condition.Cases) == 0 {
-				return fmt.Errorf("conditional edge %s: builtin condition requires at least one case", condEdge.ID)
-			}
-			for idx, kase := range condEdge.Condition.Cases {
-				if kase.Target == "" {
-					return fmt.Errorf("conditional edge %s: builtin case %d target is empty", condEdge.ID, idx)
-				}
-				if !nodeIDs[kase.Target] {
-					return fmt.Errorf("conditional edge %s: builtin case %d target node %s does not exist",
-						condEdge.ID, idx, kase.Target)
-				}
-			}
-			if condEdge.Condition.Default != "" && !nodeIDs[condEdge.Condition.Default] {
-				return fmt.Errorf("conditional edge %s: default route target %s does not exist",
-					condEdge.ID, condEdge.Condition.Default)
-			}
-		case "function":
-			// For function conditions, validate routes map and default.
-			if len(condEdge.Condition.Routes) == 0 {
-				return fmt.Errorf("conditional edge %s: at least one route is required", condEdge.ID)
-			}
-
-			for routeKey, targetNode := range condEdge.Condition.Routes {
-				if !nodeIDs[targetNode] {
-					return fmt.Errorf("conditional edge %s: route %s target node %s does not exist",
-						condEdge.ID, routeKey, targetNode)
-				}
-			}
-
-			// Validate default route (if specified)
-			if condEdge.Condition.Default != "" && !nodeIDs[condEdge.Condition.Default] {
-				return fmt.Errorf("conditional edge %s: default route target %s does not exist",
-					condEdge.ID, condEdge.Condition.Default)
-			}
-		default:
-			return fmt.Errorf("conditional edge %s: unsupported condition type %s", condEdge.ID, condEdge.Condition.Type)
+		}
+		if condEdge.Condition.Default != "" && !nodeIDs[condEdge.Condition.Default] {
+			return fmt.Errorf("conditional edge %s: default route target %s does not exist",
+				condEdge.ID, condEdge.Condition.Default)
 		}
 	}
 
@@ -333,37 +292,22 @@ func (v *Validator) validateTopology(workflow *Workflow) error {
 		adjacency[edge.Source] = append(adjacency[edge.Source], edge.Target)
 	}
 	for _, condEdge := range workflow.ConditionalEdges {
-		switch condEdge.Condition.Type {
-		case "tool_routing":
-			// tool_routing creates edges: from -> tools_node -> from -> fallback
-			adjacency[condEdge.From] = append(adjacency[condEdge.From], condEdge.Condition.ToolsNode)
-			adjacency[condEdge.Condition.ToolsNode] = append(adjacency[condEdge.Condition.ToolsNode], condEdge.From)
-			adjacency[condEdge.From] = append(adjacency[condEdge.From], condEdge.Condition.Fallback)
-		case "builtin":
-			for _, kase := range condEdge.Condition.Cases {
-				adjacency[condEdge.From] = append(adjacency[condEdge.From], kase.Target)
-			}
-			if condEdge.Condition.Default != "" {
-				adjacency[condEdge.From] = append(adjacency[condEdge.From], condEdge.Condition.Default)
-			}
-		case "function":
-			for _, target := range condEdge.Condition.Routes {
-				adjacency[condEdge.From] = append(adjacency[condEdge.From], target)
-			}
-			if condEdge.Condition.Default != "" {
-				adjacency[condEdge.From] = append(adjacency[condEdge.From], condEdge.Condition.Default)
-			}
+		for _, kase := range condEdge.Condition.Cases {
+			adjacency[condEdge.From] = append(adjacency[condEdge.From], kase.Target)
+		}
+		if condEdge.Condition.Default != "" {
+			adjacency[condEdge.From] = append(adjacency[condEdge.From], condEdge.Condition.Default)
 		}
 	}
 
-	// Find reachable nodes from entry point
+	// Find reachable nodes from start node
 	reachable := make(map[string]bool)
-	v.dfs(workflow.EntryPoint, adjacency, reachable)
+	v.dfs(workflow.StartNodeID, adjacency, reachable)
 
 	// Check for unreachable nodes
 	for _, node := range workflow.Nodes {
-		if !reachable[node.ID] && node.ID != workflow.EntryPoint {
-			return fmt.Errorf("node %s is unreachable from entry point", node.ID)
+		if !reachable[node.ID] && node.ID != workflow.StartNodeID {
+			return fmt.Errorf("node %s is unreachable from start_node_id", node.ID)
 		}
 	}
 

@@ -10,10 +10,10 @@ package builtin
 
 import (
 	"context"
-	"encoding/json"
 	"reflect"
 	"strings"
 
+	dslcel "trpc.group/trpc-go/trpc-agent-go/dsl/cel"
 	"trpc.group/trpc-go/trpc-agent-go/dsl/registry"
 	"trpc.group/trpc-go/trpc-agent-go/graph"
 )
@@ -25,16 +25,15 @@ func init() {
 }
 
 // SetStateComponent assigns values to existing workflow state variables.
-// It evaluates a list of expressions and writes the results into the
+// It evaluates a list of CEL expressions and writes the results into the
 // corresponding state fields. Variable declaration (type/default) is handled
 // at the workflow/start level; this component is purely an assignment node.
 //
-// Current implementation:
-//   - Each assignment.expr is treated as a JSON literal encoded as a string.
-//   - The parsed JSON value is passed through renderStructuredTemplate so
-//     string leaves may contain {{state.*}} / {{nodes.*}} placeholders.
-//   - This is a placeholder for a future ExpressionEngine (e.g., CEL) and
-//     allows the DSL shape to be stabilized ahead of the engine implementation.
+// Each assignment.expr is a CEL expression string evaluated with the
+// following variables available:
+//   - state: graph.State (global workflow state)
+//   - input: JSON-like object representing the node input (currently unused
+//            for builtin.set_state and left as nil).
 type SetStateComponent struct{}
 
 // setStateAssignmentConfig describes a single assignment in config.
@@ -119,20 +118,18 @@ func (c *SetStateComponent) Execute(ctx context.Context, config registry.Compone
 			continue
 		}
 
-		// Try to parse expression as JSON first.
-		var parsed any
-		if err := json.Unmarshal([]byte(exprStr), &parsed); err == nil {
-			// Recursively render templates in the parsed JSON value.
-			rendered := renderStructuredTemplate(parsed, state)
-			stateDelta[field] = rendered
+		// Evaluate the expression using CEL with the current graph.State
+		// bound to the "state" variable. For builtin.set_state we do not
+		// currently provide a structured "input" object, so it is nil.
+		value, err := dslcel.Eval(exprStr, state, nil)
+		if err != nil {
+			// Be conservative on errors: skip this assignment but do not
+			// fail the entire node execution.
 			continue
 		}
 
-		// Fallback: treat expression as a plain string template.
-		renderedStr := renderHTTPTemplate(exprStr, state)
-		stateDelta[field] = renderedStr
+		stateDelta[field] = value
 	}
 
 	return stateDelta, nil
 }
-

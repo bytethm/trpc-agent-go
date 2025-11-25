@@ -95,14 +95,9 @@
         "cases": [
           {
             "name": "flight_info",
-            "condition": {
-              "conditions": [
-                {
-                  "variable": "input.output_parsed.classification",
-                  "operator": "==",
-                  "value": "flight_info"
-                }
-              ]
+            "predicate": {
+              "expression": "input.output_parsed.classification == \"flight_info\"",
+              "format": "cel"
             },
             "target": "flight_agent"
           }
@@ -111,5 +106,5 @@
       }
     }
   ],
-  "entry_point": "start"
+  "start_node_id": "start"
 }

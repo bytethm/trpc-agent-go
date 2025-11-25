@@ -79,5 +79,5 @@
       "target": "format_results"
     }
   ],
-  "entry_point": "start"
+  "start_node_id": "start"
 }

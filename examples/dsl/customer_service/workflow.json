@@ -187,40 +187,25 @@
         "cases": [
           {
             "name": "return_item",
-            "condition": {
-              "conditions": [
-                {
-                  "variable": "input.output_parsed.classification",
-                  "operator": "==",
-                  "value": "return_item"
-                }
-              ]
+            "predicate": {
+              "expression": "input.output_parsed.classification == \"return_item\"",
+              "format": "cel"
             },
             "target": "return_agent"
           },
           {
             "name": "cancel_subscription",
-            "condition": {
-              "conditions": [
-                {
-                  "variable": "input.output_parsed.classification",
-                  "operator": "==",
-                  "value": "cancel_subscription"
-                }
-              ]
+            "predicate": {
+              "expression": "input.output_parsed.classification == \"cancel_subscription\"",
+              "format": "cel"
             },
             "target": "retention_agent"
           },
           {
             "name": "get_information",
-            "condition": {
-              "conditions": [
-                {
-                  "variable": "input.output_parsed.classification",
-                  "operator": "==",
-                  "value": "get_information"
-                }
-              ]
+            "predicate": {
+              "expression": "input.output_parsed.classification == \"get_information\"",
+              "format": "cel"
             },
             "target": "information_agent"
           }
@@ -235,27 +220,17 @@
         "cases": [
           {
             "name": "approve_offer",
-            "condition": {
-              "conditions": [
-                {
-                  "variable": "approval_result",
-                  "operator": "==",
-                  "value": "approve"
-                }
-              ]
+            "predicate": {
+              "expression": "state.approval_result == \"approve\"",
+              "format": "cel"
             },
             "target": "retention_end"
           },
           {
             "name": "reject_offer",
-            "condition": {
-              "conditions": [
-                {
-                  "variable": "approval_result",
-                  "operator": "==",
-                  "value": "reject"
-                }
-              ]
+            "predicate": {
+              "expression": "state.approval_result == \"reject\"",
+              "format": "cel"
             },
             "target": "retention_reject_end"
           }
@@ -263,5 +238,5 @@
       }
     }
   ],
-  "entry_point": "start"
+  "start_node_id": "start"
 }
