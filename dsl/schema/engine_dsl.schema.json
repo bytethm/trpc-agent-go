@@ -210,32 +210,45 @@
           "description": "List of tool names available to this agent.",
           "items": { "type": "string" }
         },
-        "tool_sets": {
-          "type": "array",
-          "description": "List of tool set names attached to this agent.",
-          "items": { "type": "string" }
-        },
         "mcp_tools": {
           "type": "array",
-          "description": "List of MCP tool configurations.",
+          "description": "List of MCP server configurations attached to this agent. Each entry corresponds to one MCP server and exposes one or more tools from that server to the agent.",
           "items": {
             "type": "object",
-            "required": ["transport"],
+            "required": ["server_url"],
             "properties": {
-              "transport": {
-                "type": "string",
-                "enum": ["stdio", "streamable_http", "sse"]
-              },
-              "command": {
-                "type": "string",
-                "description": "Executable command when transport=stdio."
-              },
               "server_url": {
                 "type": "string",
-                "description": "Remote MCP server URL when using HTTP/SSE transports."
+                "description": "MCP server URL (e.g., https://mcp.example.com/mcp)."
+              },
+              "transport": {
+                "type": "string",
+                "enum": ["streamable_http", "sse"],
+                "description": "Transport mechanism for MCP. STDIO is intentionally not exposed at the agent DSL level.",
+                "default": "streamable_http"
+              },
+              "server_label": {
+                "type": "string",
+                "description": "Optional label for this MCP server shown in the UI (e.g., \"deepwiki\")."
+              },
+              "allowed_tools": {
+                "type": "array",
+                "description": "Optional list of tool names from this MCP server that the agent is allowed to call. When omitted, all tools are available.",
+                "items": { "type": "string" }
+              },
+              "require_approval": {
+                "type": "string",
+                "description": "High-level approval policy for calls to this MCP server (e.g., \"always\", \"never\", \"auto\"). Semantics are enforced at a higher layer.",
+                "enum": ["always", "never", "auto"],
+                "default": "auto"
+              },
+              "headers": {
+                "type": "object",
+                "description": "Optional HTTP headers to include when connecting to the MCP server.",
+                "additionalProperties": { "type": "string" }
               }
             },
-            "additionalProperties": true
+            "additionalProperties": false
           }
         },
         "output_format": {

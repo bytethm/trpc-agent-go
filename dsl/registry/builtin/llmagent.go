@@ -109,7 +109,7 @@ func (c *LLMAgentComponent) Metadata() registry.ComponentMetadata {
 			{
 				Name:        "tools",
 				DisplayName: "Tools",
-				Description: "List of tool names to make available to the agent (from ToolRegistry)",
+				Description: "List of tool names to make available to the agent (from ToolRegistry or MCP toolsets).",
 				Type:        "[]string",
 				TypeID:      "array.string",
 				Kind:        "array",
@@ -118,20 +118,9 @@ func (c *LLMAgentComponent) Metadata() registry.ComponentMetadata {
 				Placeholder: "search, calculator",
 			},
 			{
-				Name:        "tool_sets",
-				DisplayName: "Tool Sets",
-				Description: "List of tool set names to attach to the agent (from ToolSetRegistry)",
-				Type:        "[]string",
-				TypeID:      "array.string",
-				Kind:        "array",
-				GoType:      reflect.TypeOf([]string{}),
-				Required:    false,
-				Placeholder: "file",
-			},
-			{
 				Name:        "mcp_tools",
 				DisplayName: "MCP Tools",
-				Description: "List of MCP tool configurations (transport/server_url/command/etc.)",
+				Description: "List of MCP server configurations attached to this agent (server_url/allowed_tools/transport/etc.). Each entry corresponds to one MCP server and exposes one or more tools from that server to the agent.",
 				Type:        "[]map[string]any",
 				TypeID:      "array.object",
 				Kind:        "array",
@@ -310,19 +299,6 @@ func (c *LLMAgentComponent) Validate(config registry.ComponentConfig) error {
 		}
 	}
 
-	// Validate tool_sets if present
-	if toolSets, ok := config["tool_sets"]; ok {
-		toolSetsSlice, ok := toolSets.([]interface{})
-		if !ok {
-			return fmt.Errorf("tool_sets must be an array")
-		}
-		for i, toolSet := range toolSetsSlice {
-			if _, ok := toolSet.(string); !ok {
-				return fmt.Errorf("tool_sets[%d] must be a string", i)
-			}
-		}
-	}
-
 	// Validate structured_output if present
 	if structuredOutput, ok := config["structured_output"]; ok {
 		if _, ok := structuredOutput.(map[string]any); !ok {
@@ -375,25 +351,47 @@ func (c *LLMAgentComponent) Validate(config registry.ComponentConfig) error {
 				return fmt.Errorf("mcp_tools[%d] must be an object", i)
 			}
 
-			// Validate transport
-			transport, ok := mcpToolConfig["transport"].(string)
-			if !ok || transport == "" {
-				return fmt.Errorf("mcp_tools[%d].transport is required and must be a string", i)
-			}
-			if transport != "stdio" && transport != "streamable_http" && transport != "sse" {
-				return fmt.Errorf("mcp_tools[%d].transport must be one of: stdio, streamable_http, sse", i)
+			// Validate server_url (required)
+			serverURL, ok := mcpToolConfig["server_url"].(string)
+			if !ok || serverURL == "" {
+				return fmt.Errorf("mcp_tools[%d].server_url is required and must be a non-empty string", i)
 			}
 
-			// Validate based on transport type
-			if transport == "stdio" {
-				// Validate command
-				if _, ok := mcpToolConfig["command"].(string); !ok {
-					return fmt.Errorf("mcp_tools[%d].command is required for stdio transport", i)
+			// Validate transport (optional, defaults to streamable_http)
+			if transportRaw, ok := mcpToolConfig["transport"]; ok {
+				transport, ok := transportRaw.(string)
+				if !ok {
+					return fmt.Errorf("mcp_tools[%d].transport must be a string when present", i)
 				}
-			} else {
-				// Validate server_url for http/sse
-				if _, ok := mcpToolConfig["server_url"].(string); !ok {
-					return fmt.Errorf("mcp_tools[%d].server_url is required for %s transport", i, transport)
+				if transport != "streamable_http" && transport != "sse" {
+					return fmt.Errorf("mcp_tools[%d].transport must be one of: streamable_http, sse", i)
+				}
+			}
+
+			// Validate allowed_tools if present
+			if allowed, ok := mcpToolConfig["allowed_tools"]; ok {
+				switch v := allowed.(type) {
+				case []interface{}:
+					for j, elem := range v {
+						if _, ok := elem.(string); !ok {
+							return fmt.Errorf("mcp_tools[%d].allowed_tools[%d] must be a string", i, j)
+						}
+					}
+				case []string:
+					// ok
+				default:
+					return fmt.Errorf("mcp_tools[%d].allowed_tools must be an array of strings", i)
+				}
+			}
+
+			// Validate require_approval if present
+			if ra, ok := mcpToolConfig["require_approval"]; ok {
+				if raStr, ok := ra.(string); ok {
+					if raStr != "always" && raStr != "never" && raStr != "auto" {
+						return fmt.Errorf("mcp_tools[%d].require_approval must be one of: always, never, auto", i)
+					}
+				} else {
+					return fmt.Errorf("mcp_tools[%d].require_approval must be a string", i)
 				}
 			}
 		}

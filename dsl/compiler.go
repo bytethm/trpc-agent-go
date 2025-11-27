@@ -1111,43 +1111,73 @@ func (c *Compiler) createLLMAgentNodeFunc(node Node) (graph.NodeFunc, error) {
 		}
 	}
 
-	// Get tool_sets from config (optional)
-	var toolSets []tool.ToolSet
-	if c.toolSetRegistry != nil {
-		if toolSetsConfig, ok := engine.Config["tool_sets"]; ok {
-			switch v := toolSetsConfig.(type) {
-			case []interface{}:
-				// List of toolset names
-				for _, toolSetNameInterface := range v {
-					if toolSetName, ok := toolSetNameInterface.(string); ok {
-						if ts, err := c.toolSetRegistry.Get(toolSetName); err == nil {
-							toolSets = append(toolSets, ts)
-						}
-					}
-				}
-			case []string:
-				// List of toolset names (already strings)
-				for _, toolSetName := range v {
-					if ts, err := c.toolSetRegistry.Get(toolSetName); err == nil {
-						toolSets = append(toolSets, ts)
-					}
-				}
-			}
-		}
-	}
-
 	// Get MCP tools from config (optional)
 	var mcpToolSets []tool.ToolSet
 	if mcpToolsConfig, ok := engine.Config["mcp_tools"]; ok {
 		if mcpToolsList, ok := mcpToolsConfig.([]interface{}); ok {
 			for _, mcpToolInterface := range mcpToolsList {
-				if mcpToolConfig, ok := mcpToolInterface.(map[string]interface{}); ok {
-					// Create MCP ToolSet from config
-					if toolSet, err := c.createMCPToolSet(mcpToolConfig); err == nil {
-						mcpToolSets = append(mcpToolSets, toolSet)
-					} else {
-						log.Warnf("Failed to create MCP toolset: %v", err)
+				mcpToolConfig, ok := mcpToolInterface.(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				rawServerURL, ok := mcpToolConfig["server_url"].(string)
+				serverURL := strings.TrimSpace(rawServerURL)
+				if !ok || serverURL == "" {
+					log.Warnf("Skipping MCP tool config without server_url")
+					continue
+				}
+
+				transport := "streamable_http"
+				if t, ok := mcpToolConfig["transport"].(string); ok && strings.TrimSpace(t) != "" {
+					transport = strings.TrimSpace(t)
+				}
+				if transport != "streamable_http" && transport != "sse" {
+					log.Warnf("Skipping MCP tool config with unsupported transport %q", transport)
+					continue
+				}
+
+				// Optional headers
+				var headers map[string]any
+				if h, ok := mcpToolConfig["headers"].(map[string]any); ok && len(h) > 0 {
+					headers = h
+				}
+
+				// Optional allowed_tools -> tool_filter for MCP ToolSet
+				var toolFilter []interface{}
+				if allowed, ok := mcpToolConfig["allowed_tools"]; ok {
+					switch v := allowed.(type) {
+					case []interface{}:
+						for _, elem := range v {
+							if name, ok := elem.(string); ok && strings.TrimSpace(name) != "" {
+								toolFilter = append(toolFilter, strings.TrimSpace(name))
+							}
+						}
+					case []string:
+						for _, name := range v {
+							if strings.TrimSpace(name) != "" {
+								toolFilter = append(toolFilter, strings.TrimSpace(name))
+							}
+						}
 					}
+				}
+
+				// Build config map compatible with createMCPToolSet.
+				cfg := map[string]any{
+					"transport":  transport,
+					"server_url": serverURL,
+				}
+				if headers != nil {
+					cfg["headers"] = headers
+				}
+				if len(toolFilter) > 0 {
+					cfg["tool_filter"] = toolFilter
+				}
+
+				if toolSet, err := c.createMCPToolSet(cfg); err == nil {
+					mcpToolSets = append(mcpToolSets, toolSet)
+				} else {
+					log.Warnf("Failed to create MCP toolset for server %q: %v", serverURL, err)
 				}
 			}
 		}
@@ -1260,11 +1290,6 @@ func (c *Compiler) createLLMAgentNodeFunc(node Node) (graph.NodeFunc, error) {
 		// Set tools if provided
 		if len(tools) > 0 {
 			opts = append(opts, llmagent.WithTools(tools))
-		}
-
-		// Set tool sets if provided (from tool_sets config)
-		if len(toolSets) > 0 {
-			opts = append(opts, llmagent.WithToolSets(toolSets))
 		}
 
 		// Set MCP tool sets if provided (from mcp_tools config)
