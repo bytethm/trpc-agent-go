@@ -336,7 +336,7 @@ func (c *Compiler) createLLMAgentNodeFunc(node Node) (graph.NodeFunc, error) {
 
 - `examples/dsl/llmagent/` - Basic LLMAgent with regular tools
 - `examples/mcptool/` - Low-level MCP tool usage
-- `examples/dsl/graph_basic/` - Basic DSL workflow
+- `examples/dsl/graph_custom/` - Custom registry DSL workflow
 
 ## 💡 Best Practices
 
@@ -354,4 +354,3 @@ This example demonstrates:
 - ✅ Mixing different tool types (regular + MCP)
 - ✅ Frontend-friendly declarative configuration
 - ✅ Framework's advantage over visual-only platforms
-

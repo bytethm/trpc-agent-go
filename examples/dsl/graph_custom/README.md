@@ -1,6 +1,6 @@
-# Graph Basic Example (DSL Version)
+# Graph Custom Example (DSL Version)
 
-This example is the DSL-based version of `/examples/graph/basic`.  
+This example is the DSL-based version of `/examples/graph/custom` (custom component registration).  
 It shows how to use JSON DSL to recreate the original Graph example:
 
 - document preprocessing
@@ -69,7 +69,7 @@ This example defines several custom components:
 ## Files
 
 ```text
-graph_basic/
+graph_custom/
 ├── main.go           # Main program: registers components, models, tools
 ├── components.go     # Custom component implementations
 ├── workflow.json     # DSL workflow definition
@@ -107,10 +107,10 @@ export OPENAI_API_KEY="your-api-key"
 export MODEL_NAME="deepseek-chat"
 
 # Build
-go build -o graph_basic main.go components.go
+go build -o graph_custom main.go components.go
 
 # Run
-./graph_basic
+./graph_custom
 ```
 
 ## Expected output
