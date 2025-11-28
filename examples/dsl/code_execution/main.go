@@ -41,36 +41,36 @@ func run() error {
 	componentRegistry := registry.DefaultRegistry
 	componentRegistry.MustRegister(&FormatResultsComponent{})
 
-	// Step 2: Load workflow from JSON
-	workflowData, err := os.ReadFile("workflow.json")
+	// Step 2: Load graph definition from JSON
+	graphData, err := os.ReadFile("workflow.json")
 	if err != nil {
 		return fmt.Errorf("failed to read workflow.json: %w", err)
 	}
 
-	var workflow dsl.Workflow
-	if err := json.Unmarshal(workflowData, &workflow); err != nil {
+	var graphDef dsl.Graph
+	if err := json.Unmarshal(graphData, &graphDef); err != nil {
 		return fmt.Errorf("failed to parse workflow.json: %w", err)
 	}
 
-	fmt.Printf("✅ Loaded workflow: %s\n", workflow.Name)
-	fmt.Printf("   Description: %s\n", workflow.Description)
-	fmt.Printf("   Nodes: %d\n", len(workflow.Nodes))
+	fmt.Printf("✅ Loaded graph: %s\n", graphDef.Name)
+	fmt.Printf("   Description: %s\n", graphDef.Description)
+	fmt.Printf("   Nodes: %d\n", len(graphDef.Nodes))
 	fmt.Println()
 
-	// Step 3: Compile workflow
+	// Step 3: Compile graph
 	compiler := dsl.NewCompiler(componentRegistry)
 
-	compiledGraph, err := compiler.Compile(&workflow)
+	compiledGraph, err := compiler.Compile(&graphDef)
 	if err != nil {
-		return fmt.Errorf("failed to compile workflow: %w", err)
+		return fmt.Errorf("failed to compile graph: %w", err)
 	}
 
-	fmt.Println("✅ Workflow compiled successfully!")
+	fmt.Println("✅ Graph compiled successfully!")
 	fmt.Println()
 
 	// Step 4: Create GraphAgent
-	graphAgent, err := graphagent.New("code-execution-workflow", compiledGraph,
-		graphagent.WithDescription("DSL-based code execution workflow"),
+	graphAgent, err := graphagent.New("code-execution-graph", compiledGraph,
+		graphagent.WithDescription("DSL-based code execution graph"),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create graph agent: %w", err)
@@ -83,17 +83,17 @@ func run() error {
 	)
 	defer appRunner.Close()
 
-	// Step 6: Execute workflow
-	fmt.Println("🔄 Executing workflow...")
+	// Step 6: Execute graph
+	fmt.Println("🔄 Executing graph...")
 	fmt.Println()
 
 	userID := "demo-user"
 	sessionID := "demo-session"
-	message := model.NewUserMessage("Execute code workflow")
+	message := model.NewUserMessage("Execute code graph")
 
 	eventChan, err := appRunner.Run(ctx, userID, sessionID, message)
 	if err != nil {
-		return fmt.Errorf("failed to run workflow: %w", err)
+		return fmt.Errorf("failed to run graph: %w", err)
 	}
 
 	// Step 7: Process events and collect results

@@ -32,30 +32,30 @@ func run() error {
 	fmt.Println("==================================================")
 	fmt.Println()
 
-	// Load workflow from JSON
+	// Load graph definition from JSON
 	data, err := os.ReadFile("workflow.json")
 	if err != nil {
 		return fmt.Errorf("failed to read workflow.json: %w", err)
 	}
 
-	var wf dsl.Workflow
-	if err := json.Unmarshal(data, &wf); err != nil {
+	var graphDef dsl.Graph
+	if err := json.Unmarshal(data, &graphDef); err != nil {
 		return fmt.Errorf("failed to parse workflow.json: %w", err)
 	}
 
-	fmt.Printf("✅ Loaded workflow: %s\n", wf.Name)
-	fmt.Printf("   Description: %s\n", wf.Description)
-	fmt.Printf("   Nodes: %d\n", len(wf.Nodes))
+	fmt.Printf("✅ Loaded graph: %s\n", graphDef.Name)
+	fmt.Printf("   Description: %s\n", graphDef.Description)
+	fmt.Printf("   Nodes: %d\n", len(graphDef.Nodes))
 	fmt.Println()
 
-	// Compile workflow
+	// Compile graph
 	compiler := dsl.NewCompiler(registry.DefaultRegistry)
 
-	compiledGraph, err := compiler.Compile(&wf)
+	compiledGraph, err := compiler.Compile(&graphDef)
 	if err != nil {
-		return fmt.Errorf("failed to compile workflow: %w", err)
+		return fmt.Errorf("failed to compile graph: %w", err)
 	}
-	fmt.Println("✅ Workflow compiled successfully")
+	fmt.Println("✅ Graph compiled successfully")
 	fmt.Println()
 
 	// Create GraphAgent
@@ -67,27 +67,27 @@ func run() error {
 	}
 
 	// Create Runner
-	appRunner := runner.NewRunner("transform-basic-workflow", graphAgent)
+	appRunner := runner.NewRunner("transform-basic-graph", graphAgent)
 	defer appRunner.Close()
 
 	// Run a single example input
 	userID := "demo-user"
 	sessionID := "demo-session"
-	input := "Hello from transform_basic workflow"
+	input := "Hello from transform_basic graph"
 
-	fmt.Printf("🔄 Running workflow with input: %q\n\n", input)
-	if err := executeWorkflow(ctx, appRunner, userID, sessionID, input); err != nil {
+	fmt.Printf("🔄 Running graph with input: %q\n\n", input)
+	if err := executeGraph(ctx, appRunner, userID, sessionID, input); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func executeWorkflow(ctx context.Context, appRunner runner.Runner, userID, sessionID, userInput string) error {
+func executeGraph(ctx context.Context, appRunner runner.Runner, userID, sessionID, userInput string) error {
 	msg := model.NewUserMessage(userInput)
 	events, err := appRunner.Run(ctx, userID, sessionID, msg)
 	if err != nil {
-		return fmt.Errorf("failed to run workflow: %w", err)
+		return fmt.Errorf("failed to run graph: %w", err)
 	}
 
 	var (
@@ -152,4 +152,3 @@ func executeWorkflow(ctx context.Context, appRunner runner.Runner, userID, sessi
 
 	return nil
 }
-

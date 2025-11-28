@@ -37,7 +37,7 @@ func (c *FunctionComponent) Metadata() registry.ComponentMetadata {
 				Name:        "state",
 				Type:        "graph.State",
 				GoType:      reflect.TypeOf(map[string]any{}),
-				Description: "Current workflow state",
+				Description: "Current graph state",
 				Required:    true,
 			},
 		},
@@ -46,7 +46,7 @@ func (c *FunctionComponent) Metadata() registry.ComponentMetadata {
 				Name:        "state",
 				Type:        "graph.State",
 				GoType:      reflect.TypeOf(map[string]any{}),
-				Description: "Updated workflow state",
+				Description: "Updated graph state",
 			},
 		},
 		ConfigSchema: []registry.ParameterSchema{

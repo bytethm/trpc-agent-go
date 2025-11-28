@@ -3,8 +3,8 @@ syntax = "proto3";
 package dsl_platform;
 
 // HTTP / frontend facing API schema for the DSL platform.
-// This file assumes the engine-level DSL types are defined in dsl/engine_dsl.proto
-// and only defines the RPC surface and view-layer workflow wrapper.
+// This file assumes the engine-level DSL types are defined via JSON schema
+// and only defines the RPC surface and view-layer graph wrapper.
 
 import "dsl/engine_dsl.proto";
 
@@ -14,9 +14,9 @@ import "dsl/engine_dsl.proto";
 
 message Empty {}
 
-// View-layer workflow used by HTTP APIs and frontends.
-// It wraps the engine-level Workflow nodes with UI information.
-message ViewWorkflow {
+// View-layer graph used by HTTP APIs and frontends.
+// It wraps the engine-level Graph nodes with UI information.
+message ViewGraph {
   string version = 1;
   string name = 2;
   string description = 3;
@@ -28,7 +28,7 @@ message ViewWorkflow {
   string start_node_id = 7;
   string finish_point = 8;
 
-  // Arbitrary workflow-level metadata.
+  // Arbitrary graph-level metadata.
   engine_dsl.StructValue metadata = 9;
 }
 
@@ -102,42 +102,42 @@ message ListToolSetsResponse {
 }
 
 // ============================================================================
-// Workflow CRUD RPCs
+// Graph CRUD RPCs
 // ============================================================================
 
-message ListWorkflowsRequest {
+message ListGraphsRequest {
   int32 page = 1;
   int32 limit = 2;
 }
 
-message WorkflowResponse {
+message GraphResponse {
   string id = 1;
-  ViewWorkflow workflow = 2;
+  ViewGraph graph = 2;
   string created_at = 3;
   string updated_at = 4;
 }
 
-message WorkflowList {
-  repeated WorkflowResponse workflows = 1;
+message GraphList {
+  repeated GraphResponse graphs = 1;
   int32 total = 2;
   int32 page = 3;
   int32 limit = 4;
 }
 
-message CreateWorkflowRequest {
-  ViewWorkflow workflow = 1;
+message CreateGraphRequest {
+  ViewGraph graph = 1;
 }
 
-message UpdateWorkflowRequest {
+message UpdateGraphRequest {
   string id = 1;
-  ViewWorkflow workflow = 2;
+  ViewGraph graph = 2;
 }
 
-message GetWorkflowRequest {
+message GetGraphRequest {
   string id = 1;
 }
 
-message DeleteWorkflowRequest {
+message DeleteGraphRequest {
   string id = 1;
 }
 
@@ -145,8 +145,8 @@ message DeleteWorkflowRequest {
 // Validation / schema RPCs
 // ============================================================================
 
-message ValidateWorkflowRequest {
-  ViewWorkflow workflow = 1;
+message ValidateGraphRequest {
+  ViewGraph graph = 1;
 }
 
 message ValidationResult {
@@ -159,17 +159,17 @@ message ValidationError {
   string message = 2;
 }
 
-message WorkflowSchemaRequest {
-  ViewWorkflow workflow = 1;
+message GraphSchemaRequest {
+  ViewGraph graph = 1;
 }
 
-// Uses engine_dsl.WorkflowSchemaResponse for the payload.
+// Uses engine_dsl.GraphSchemaResponse for the payload.
 
-message WorkflowVarsRequest {
-  ViewWorkflow workflow = 1;
+message GraphVarsRequest {
+  ViewGraph graph = 1;
 }
 
-// Uses engine_dsl.WorkflowVarsResponse for the payload.
+// Uses engine_dsl.GraphVarsResponse for the payload.
 
 // ============================================================================
 // Execution RPCs
@@ -180,7 +180,7 @@ message ExecutionConfig {
   int32 timeout_seconds = 2;
 }
 
-message ExecuteWorkflowRequest {
+message ExecuteGraphRequest {
   string id = 1;
   engine_dsl.StructValue input = 2;
   ExecutionConfig config = 3;
@@ -196,7 +196,7 @@ message ExecutionEvent {
 message ExecutionResult {
   string execution_id = 1;
   string status = 2;                       // "success" | "error" | "timeout".
-  engine_dsl.StructValue final_state = 3;  // Final workflow state.
+  engine_dsl.StructValue final_state = 3;  // Final graph state.
   repeated ExecutionEvent events = 4;      // All events (non-streaming).
   string error = 5;                        // Optional error message.
 }
@@ -215,19 +215,19 @@ service DSLPlatformService {
   rpc ListTools(Empty) returns (ListToolsResponse);
   rpc ListToolSets(Empty) returns (ListToolSetsResponse);
 
-  // Workflow CRUD
-  rpc ListWorkflows(ListWorkflowsRequest) returns (WorkflowList);
-  rpc CreateWorkflow(CreateWorkflowRequest) returns (WorkflowResponse);
-  rpc GetWorkflow(GetWorkflowRequest) returns (WorkflowResponse);
-  rpc UpdateWorkflow(UpdateWorkflowRequest) returns (WorkflowResponse);
-  rpc DeleteWorkflow(DeleteWorkflowRequest) returns (Empty);
+  // Graph CRUD
+  rpc ListGraphs(ListGraphsRequest) returns (GraphList);
+  rpc CreateGraph(CreateGraphRequest) returns (GraphResponse);
+  rpc GetGraph(GetGraphRequest) returns (GraphResponse);
+  rpc UpdateGraph(UpdateGraphRequest) returns (GraphResponse);
+  rpc DeleteGraph(DeleteGraphRequest) returns (Empty);
 
   // Validation / schema
-  rpc ValidateWorkflow(ValidateWorkflowRequest) returns (ValidationResult);
-  rpc GetWorkflowSchema(WorkflowSchemaRequest) returns (engine_dsl.WorkflowSchemaResponse);
-  rpc GetWorkflowVars(WorkflowVarsRequest) returns (engine_dsl.WorkflowVarsResponse);
+  rpc ValidateGraph(ValidateGraphRequest) returns (ValidationResult);
+  rpc GetGraphSchema(GraphSchemaRequest) returns (engine_dsl.GraphSchemaResponse);
+  rpc GetGraphVars(GraphVarsRequest) returns (engine_dsl.GraphVarsResponse);
 
   // Execution
-  rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecutionResult);
-  rpc ExecuteWorkflowStream(ExecuteWorkflowRequest) returns (stream ExecutionEvent);
+  rpc ExecuteGraph(ExecuteGraphRequest) returns (ExecutionResult);
+  rpc ExecuteGraphStream(ExecuteGraphRequest) returns (stream ExecutionEvent);
 }

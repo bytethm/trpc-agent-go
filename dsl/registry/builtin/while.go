@@ -19,7 +19,7 @@ import (
 
 func init() {
 	// Register the While component so that it can be referenced from DSL
-	// workflows as "builtin.while". This component is primarily a structural
+	// graphs as "builtin.while". This component is primarily a structural
 	// / compile-time concept: the DSL compiler expands it into conditional
 	// back-edges in the underlying StateGraph rather than creating a real
 	// executable node.
@@ -50,7 +50,7 @@ func (c *WhileComponent) Metadata() registry.ComponentMetadata {
 	return registry.ComponentMetadata{
 		Name:        "builtin.while",
 		DisplayName: "While",
-		Description: "Loop while a condition is true over the shared workflow state. The loop body is defined as a nested subgraph.",
+		Description: "Loop while a condition is true over the shared graph state. The loop body is defined as a nested subgraph.",
 		Category:    "Control",
 		Version:     "1.0.0",
 
@@ -83,7 +83,7 @@ func (c *WhileComponent) Metadata() registry.ComponentMetadata {
 }
 
 // Execute implements the Component interface. In practice this method is not
-// used when compiling DSL workflows, because builtin.while is expanded by the
+// used when compiling DSL graphs, because builtin.while is expanded by the
 // compiler into conditional edges and does not become a real executable node.
 // It is provided only for completeness and potential non-DSL usage.
 func (c *WhileComponent) Execute(ctx context.Context, config registry.ComponentConfig, state graph.State) (any, error) {

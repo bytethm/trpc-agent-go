@@ -24,7 +24,7 @@ func init() {
 }
 
 // AgentComponent is a builtin component that wraps graph.NewAgentNodeFunc.
-// It allows using a sub-agent as a node in the workflow.
+// It allows using a sub-agent as a node in the graph.
 //
 // The agent is looked up by name from the parent GraphAgent's sub-agent list.
 // This enables multi-agent composition where one agent can delegate to another.

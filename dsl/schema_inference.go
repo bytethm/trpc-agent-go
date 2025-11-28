@@ -17,7 +17,7 @@ import (
 	"trpc.group/trpc-go/trpc-agent-go/model"
 )
 
-// SchemaInference automatically infers State Schema from workflow components.
+// SchemaInference automatically infers State Schema from graph components.
 // This eliminates the need for users to manually define State Schema.
 //
 // The inference process:
@@ -78,19 +78,19 @@ func (si *SchemaInference) addBuiltinFields(schema *graph.StateSchema) {
 	})
 }
 
-// addDeclaredStateVariables adds workflow-declared state variables to the
+// addDeclaredStateVariables adds graph-declared state variables to the
 // schema (and optionally usage map). These declarations are the canonical
-// source for workflow-level variables such as those written by builtin.set_state.
+// source for graph-level variables such as those written by builtin.set_state.
 func (si *SchemaInference) addDeclaredStateVariables(
 	schema *graph.StateSchema,
-	workflow *Workflow,
+	graphDef *Graph,
 	usage map[string]FieldUsage,
 ) {
-	if workflow == nil || len(workflow.StateVariables) == 0 {
+	if graphDef == nil || len(graphDef.StateVariables) == 0 {
 		return
 	}
 
-	for _, v := range workflow.StateVariables {
+	for _, v := range graphDef.StateVariables {
 		name := strings.TrimSpace(v.Name)
 		if name == "" {
 			continue
@@ -143,21 +143,21 @@ func (si *SchemaInference) addDeclaredStateVariables(
 	}
 }
 
-// InferSchema infers the State Schema from a workflow (engine DSL).
+// InferSchema infers the State Schema from a graph (engine DSL).
 // This method only cares about executable semantics and is intentionally
 // decoupled from any UI-specific concepts.
-func (si *SchemaInference) InferSchema(workflow *Workflow) (*graph.StateSchema, error) {
-	paramMap, err := si.buildParameterMap(workflow)
+func (si *SchemaInference) InferSchema(graphDef *Graph) (*graph.StateSchema, error) {
+	paramMap, err := si.buildParameterMap(graphDef)
 	if err != nil {
 		return nil, err
 	}
 	schema := si.buildSchemaFromParams(paramMap)
-	// Enrich with workflow-declared state variables (e.g., for builtin.set_state).
-	si.addDeclaredStateVariables(schema, workflow, nil)
+	// Enrich with graph-declared state variables (e.g., for builtin.set_state).
+	si.addDeclaredStateVariables(schema, graphDef, nil)
 	return schema, nil
 }
 
-// FieldUsage describes how a particular state field is used in the workflow.
+// FieldUsage describes how a particular state field is used in the graph.
 // Writers and Readers contain node IDs that write to / read from this field.
 // Kind and SchemaRef/JSONSchema provide front-end-friendly type information:
 //   - Kind: "string" | "number" | "boolean" | "object" | "array" | "opaque"
@@ -175,21 +175,21 @@ type FieldUsage struct {
 // InferSchemaAndUsage returns both the inferred StateSchema and field usage
 // information (which nodes read/write which fields). This is intended for
 // platform / UI layers that need to present variable suggestions.
-func (si *SchemaInference) InferSchemaAndUsage(workflow *Workflow) (*graph.StateSchema, map[string]FieldUsage, error) {
-	paramMap, err := si.buildParameterMap(workflow)
+func (si *SchemaInference) InferSchemaAndUsage(graphDef *Graph) (*graph.StateSchema, map[string]FieldUsage, error) {
+	paramMap, err := si.buildParameterMap(graphDef)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Enrich parameter info with component-level context where useful (e.g., structured_output).
-	si.attachComponentContext(workflow, paramMap)
+	si.attachComponentContext(graphDef, paramMap)
 
 	schema := si.buildSchemaFromParams(paramMap)
 	usage := si.buildUsageFromParams(paramMap)
 
-	// Enrich schema and usage with workflow-declared state variables so that
+	// Enrich schema and usage with graph-declared state variables so that
 	// editor-facing variables include explicitly declared fields (e.g., via Start).
-	si.addDeclaredStateVariables(schema, workflow, usage)
+	si.addDeclaredStateVariables(schema, graphDef, usage)
 
 	return schema, usage, nil
 }
@@ -260,10 +260,10 @@ func (si *SchemaInference) buildUsageFromParams(paramMap map[string]*ParameterIn
 
 // buildParameterMap collects all input/output parameters from components and DSL NodeIO
 // into a map keyed by state field name.
-func (si *SchemaInference) buildParameterMap(workflow *Workflow) (map[string]*ParameterInfo, error) {
+func (si *SchemaInference) buildParameterMap(graphDef *Graph) (map[string]*ParameterInfo, error) {
 	parameterMap := make(map[string]*ParameterInfo)
 
-	for _, node := range workflow.Nodes {
+	for _, node := range graphDef.Nodes {
 		engine := node.EngineNode
 
 		// Get component metadata
@@ -367,7 +367,7 @@ func (si *SchemaInference) addParameter(paramMap map[string]*ParameterInfo, para
 }
 
 // addDSLOutputs adds output parameters from DSL node outputs configuration.
-// This handles output remapping specified in the workflow DSL.
+// This handles output remapping specified in the graph DSL.
 func (si *SchemaInference) addDSLOutputs(node Node, paramMap map[string]*ParameterInfo) error {
 	engine := node.EngineNode
 
@@ -540,14 +540,14 @@ func (si *SchemaInference) getReducer(reducerName string) graph.StateReducer {
 	}
 }
 
-func (si *SchemaInference) attachComponentContext(workflow *Workflow, paramMap map[string]*ParameterInfo) {
-	if workflow == nil {
+func (si *SchemaInference) attachComponentContext(graphDef *Graph, paramMap map[string]*ParameterInfo) {
+	if graphDef == nil {
 		return
 	}
 
 	// Build a quick index from node ID to node for later lookups.
-	nodeByID := make(map[string]Node, len(workflow.Nodes))
-	for _, node := range workflow.Nodes {
+	nodeByID := make(map[string]Node, len(graphDef.Nodes))
+	for _, node := range graphDef.Nodes {
 		nodeByID[node.ID] = node
 	}
 
@@ -556,25 +556,25 @@ func (si *SchemaInference) attachComponentContext(workflow *Workflow, paramMap m
 	// (e.g., input.output_parsed, nodes.<id>.output_parsed). We intentionally
 	// avoid enriching a global output_parsed field here to keep the engine
 	// schema focused on true state fields.
-	si.attachLLMAgentStructuredOutput(workflow, paramMap, nodeByID)
-	si.attachEndStructuredOutput(workflow, paramMap, nodeByID)
+	si.attachLLMAgentStructuredOutput(graphDef, paramMap, nodeByID)
+	si.attachEndStructuredOutput(graphDef, paramMap, nodeByID)
 }
 
 // attachLLMAgentStructuredOutput used to enrich a global output_parsed field
 // with JSONSchema and precise writers. LLMAgent no longer exposes a global
 // output_parsed in StateSchema, so this hook is intentionally a no-op kept for
 // potential future extensions.
-func (si *SchemaInference) attachLLMAgentStructuredOutput(workflow *Workflow, paramMap map[string]*ParameterInfo, nodeByID map[string]Node) {
-	_ = workflow
+func (si *SchemaInference) attachLLMAgentStructuredOutput(graphDef *Graph, paramMap map[string]*ParameterInfo, nodeByID map[string]Node) {
+	_ = graphDef
 	_ = paramMap
 	_ = nodeByID
 }
 
 // attachEndStructuredOutput enriches end_structured_output usage when builtin.end declares an output_schema.
-func (si *SchemaInference) attachEndStructuredOutput(workflow *Workflow, paramMap map[string]*ParameterInfo, nodeByID map[string]Node) {
+func (si *SchemaInference) attachEndStructuredOutput(graphDef *Graph, paramMap map[string]*ParameterInfo, nodeByID map[string]Node) {
 	endNodesWithSchema := make(map[string]map[string]any)
 
-	for _, node := range workflow.Nodes {
+	for _, node := range graphDef.Nodes {
 		engine := node.EngineNode
 		if engine.NodeType != "builtin.end" {
 			continue

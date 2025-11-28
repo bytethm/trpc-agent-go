@@ -2,19 +2,19 @@ package main
 
 import "trpc.group/trpc-go/trpc-agent-go/dsl"
 
-// ViewWorkflow is the ReactFlow-friendly view DSL used by HTTP APIs and
+// ViewGraph is the ReactFlow-friendly view DSL used by HTTP APIs and
 // frontends. It contains UI concepts (type/position/labels) plus an
 // embedded engine DSL under Data.Engine.
-type ViewWorkflow struct {
-	Version          string                     `json:"version,omitempty"`
-	Name             string                     `json:"name"`
-	Description      string                     `json:"description,omitempty"`
-	Nodes            []ViewNode                 `json:"nodes"`
-	Edges            []dsl.Edge                 `json:"edges"`
-	ConditionalEdges []dsl.ConditionalEdge      `json:"conditional_edges,omitempty"`
-	StartNodeID      string                     `json:"start_node_id"`
-	FinishPoint      string                     `json:"finish_point,omitempty"`
-	Metadata         map[string]interface{}     `json:"metadata,omitempty"`
+type ViewGraph struct {
+	Version          string                 `json:"version,omitempty"`
+	Name             string                 `json:"name"`
+	Description      string                 `json:"description,omitempty"`
+	Nodes            []ViewNode             `json:"nodes"`
+	Edges            []dsl.Edge             `json:"edges"`
+	ConditionalEdges []dsl.ConditionalEdge  `json:"conditional_edges,omitempty"`
+	StartNodeID      string                 `json:"start_node_id"`
+	FinishPoint      string                 `json:"finish_point,omitempty"`
+	Metadata         map[string]any         `json:"metadata,omitempty"`
 }
 
 // ViewNode is a ReactFlow-style node that embeds the engine DSL under data.engine.
@@ -38,30 +38,30 @@ type ViewPosition struct {
 	Y float64 `json:"y"`
 }
 
-// ToEngineWorkflow converts a ViewWorkflow (with UI information) into a pure
-// engine-level dsl.Workflow. UI-only fields such as position, labels, and
+// ToEngineGraph converts a ViewGraph (with UI information) into a pure
+// engine-level dsl.Graph. UI-only fields such as position, labels, and
 // node types are dropped.
-func (vw *ViewWorkflow) ToEngineWorkflow() *dsl.Workflow {
-	if vw == nil {
+func (vg *ViewGraph) ToEngineGraph() *dsl.Graph {
+	if vg == nil {
 		return nil
 	}
 
-	nodes := make([]dsl.Node, 0, len(vw.Nodes))
-	for _, vn := range vw.Nodes {
+	nodes := make([]dsl.Node, 0, len(vg.Nodes))
+	for _, vn := range vg.Nodes {
 		nodes = append(nodes, dsl.Node{
 			ID:         vn.ID,
 			EngineNode: vn.Data.Engine,
 		})
 	}
 
-	return &dsl.Workflow{
-		Version:          vw.Version,
-		Name:             vw.Name,
-		Description:      vw.Description,
+	return &dsl.Graph{
+		Version:          vg.Version,
+		Name:             vg.Name,
+		Description:      vg.Description,
 		Nodes:            nodes,
-		Edges:            vw.Edges,
-		ConditionalEdges: vw.ConditionalEdges,
-		StartNodeID:      vw.StartNodeID,
-		Metadata:         vw.Metadata,
+		Edges:            vg.Edges,
+		ConditionalEdges: vg.ConditionalEdges,
+		StartNodeID:      vg.StartNodeID,
+		Metadata:         vg.Metadata,
 	}
 }

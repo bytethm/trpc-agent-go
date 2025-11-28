@@ -15,7 +15,7 @@ import (
 )
 
 // ToolRegistry is a thread-safe registry for managing tool instances.
-// Tools are registered at application startup and referenced by name in DSL workflows.
+// Tools are registered at application startup and referenced by name in DSL graphs.
 //
 // Note: Built-in tools (like duckduckgo_search) are automatically registered in
 // DefaultToolRegistry. You can use NewToolRegistryWithBuiltins() to create a new

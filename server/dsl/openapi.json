@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "trpc-agent DSL Platform API",
-    "description": "REST API for the trpc-agent DSL platform. This API allows frontend applications to:\n • List available components, models, tools, and reducers\n • Validate, compile, and execute DSL workflows\n • Manage workflow lifecycle (CRUD operations)\n • Stream execution events via SSE\n\nAll endpoints use JSON for request/response unless otherwise specified.",
+    "description": "REST API for the trpc-agent DSL platform. This API allows frontend applications to:\n • List available components, models, tools, and reducers\n • Validate, compile, and execute DSL graphs\n • Manage graph lifecycle (CRUD operations)\n • Stream execution events via SSE\n\nAll endpoints use JSON for request/response unless otherwise specified.",
     "version": "1.0.0",
     "contact": {
       "name": "trpc-agent Team"
@@ -32,12 +32,12 @@
       "description": "Tool registry operations"
     },
     {
-      "name": "workflows",
-      "description": "Workflow management (CRUD)"
+      "name": "graphs",
+      "description": "Graph management (CRUD)"
     },
     {
       "name": "execution",
-      "description": "Workflow execution and streaming"
+      "description": "Graph execution and streaming"
     },
     {
       "name": "validation",
@@ -164,11 +164,11 @@
         }
       }
     },
-    "/api/v1/workflows": {
+    "/api/v1/graphs": {
       "get": {
-        "tags": ["workflows"],
-        "summary": "List all workflows",
-        "operationId": "listWorkflows",
+        "tags": ["graphs"],
+        "summary": "List all graphs",
+        "operationId": "listGraphs",
         "parameters": [
           {
             "name": "page",
@@ -189,11 +189,11 @@
         ],
         "responses": {
           "200": {
-            "description": "List of workflows",
+            "description": "List of graphs",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkflowList"
+                  "$ref": "#/components/schemas/GraphList"
                 }
               }
             }
@@ -201,69 +201,69 @@
         }
       },
       "post": {
-        "tags": ["workflows"],
-        "summary": "Create a new workflow",
-        "operationId": "createWorkflow",
+        "tags": ["graphs"],
+        "summary": "Create a new graph",
+        "operationId": "createGraph",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Workflow"
+                "$ref": "#/components/schemas/Graph"
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "Workflow created",
+            "description": "Graph created",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkflowResponse"
+                  "$ref": "#/components/schemas/GraphResponse"
                 }
               }
             }
           },
           "400": {
-            "description": "Invalid workflow definition"
+            "description": "Invalid graph definition"
           }
         }
       }
     },
-    "/api/v1/workflows/{id}": {
+    "/api/v1/graphs/{id}": {
       "get": {
-        "tags": ["workflows"],
-        "summary": "Get workflow by ID",
-        "operationId": "getWorkflow",
+        "tags": ["graphs"],
+        "summary": "Get graph by ID",
+        "operationId": "getGraph",
         "parameters": [
           {
-            "$ref": "#/components/parameters/workflowId"
+            "$ref": "#/components/parameters/graphId"
           }
         ],
         "responses": {
           "200": {
-            "description": "Workflow details",
+            "description": "Graph details",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkflowResponse"
+                  "$ref": "#/components/schemas/GraphResponse"
                 }
               }
             }
           },
           "404": {
-            "description": "Workflow not found"
+            "description": "Graph not found"
           }
         }
       },
       "put": {
-        "tags": ["workflows"],
-        "summary": "Update workflow",
-        "operationId": "updateWorkflow",
+        "tags": ["graphs"],
+        "summary": "Update graph",
+        "operationId": "updateGraph",
         "parameters": [
           {
-            "$ref": "#/components/parameters/workflowId"
+            "$ref": "#/components/parameters/graphId"
           }
         ],
         "requestBody": {
@@ -271,45 +271,45 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Workflow"
+                "$ref": "#/components/schemas/Graph"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Workflow updated"
+            "description": "Graph updated"
           }
         }
       },
       "delete": {
-        "tags": ["workflows"],
-        "summary": "Delete workflow",
-        "operationId": "deleteWorkflow",
+        "tags": ["graphs"],
+        "summary": "Delete graph",
+        "operationId": "deleteGraph",
         "parameters": [
           {
-            "$ref": "#/components/parameters/workflowId"
+            "$ref": "#/components/parameters/graphId"
           }
         ],
         "responses": {
           "204": {
-            "description": "Workflow deleted"
+            "description": "Graph deleted"
           }
         }
       }
     },
-    "/api/v1/workflows/validate": {
+    "/api/v1/graphs/validate": {
       "post": {
         "tags": ["validation"],
-        "summary": "Validate a workflow DSL",
-        "description": "Validates workflow structure, component references, and configuration without executing it.",
-        "operationId": "validateWorkflow",
+        "summary": "Validate a graph DSL",
+        "description": "Validates graph structure, component references, and configuration without executing it.",
+        "operationId": "validateGraph",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Workflow"
+                "$ref": "#/components/schemas/Graph"
               }
             }
           }
@@ -328,18 +328,18 @@
         }
       }
     },
-    "/api/v1/workflows/schema": {
+    "/api/v1/graphs/schema": {
       "post": {
         "tags": ["validation"],
-        "summary": "Infer workflow state schema",
-        "description": "Infers state fields and usage (readers/writers) for a given workflow (view DSL). Intended for editor variable suggestions.",
-        "operationId": "getWorkflowSchema",
+        "summary": "Infer graph state schema",
+        "description": "Infers state fields and usage (readers/writers) for a given graph (view DSL). Intended for editor variable suggestions.",
+        "operationId": "getGraphSchema",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Workflow"
+                "$ref": "#/components/schemas/Graph"
               }
             }
           }
@@ -350,7 +350,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkflowSchemaResponse"
+                  "$ref": "#/components/schemas/GraphSchemaResponse"
                 }
               }
             }
@@ -358,18 +358,18 @@
         }
       }
     },
-    "/api/v1/workflows/vars": {
+    "/api/v1/graphs/vars": {
       "post": {
         "tags": ["validation"],
-        "summary": "List per-node variables for a workflow",
+        "summary": "List per-node variables for a graph",
         "description": "Returns variables produced by each node (name/type/kind/json_schema) for editor variable pickers.",
-        "operationId": "getWorkflowVars",
+        "operationId": "getGraphVars",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Workflow"
+                "$ref": "#/components/schemas/Graph"
               }
             }
           }
@@ -380,7 +380,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkflowVarsResponse"
+                  "$ref": "#/components/schemas/GraphVarsResponse"
                 }
               }
             }
@@ -388,18 +388,18 @@
         }
       }
     },
-    "/api/v1/workflows/vars/node": {
+    "/api/v1/graphs/vars/node": {
       "post": {
         "tags": ["validation"],
         "summary": "List variables for a single node",
-        "description": "Returns variables available when editing a single node. This is a convenience wrapper over /workflows/vars for editors that want node-scoped variable pickers.",
-        "operationId": "getWorkflowNodeVars",
+        "description": "Returns variables available when editing a single node. This is a convenience wrapper over /graphs/vars for editors that want node-scoped variable pickers.",
+        "operationId": "getGraphNodeVars",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WorkflowVarsNodeRequest"
+                "$ref": "#/components/schemas/GraphVarsNodeRequest"
               }
             }
           }
@@ -410,7 +410,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkflowVarsNode"
+                  "$ref": "#/components/schemas/GraphVarsNode"
                 }
               }
             }
@@ -419,20 +419,20 @@
             "description": "Invalid request (e.g., malformed JSON or missing node_id)"
           },
           "404": {
-            "description": "Node not found in workflow"
+            "description": "Node not found in graph"
           }
         }
       }
     },
-    "/api/v1/workflows/{id}/compile": {
+    "/api/v1/graphs/{id}/compile": {
       "post": {
-        "tags": ["workflows"],
-        "summary": "Compile a workflow to executable graph",
-        "description": "Compiles the DSL workflow into an executable StateGraph. Returns compilation status and any errors.",
-        "operationId": "compileWorkflow",
+        "tags": ["graphs"],
+        "summary": "Compile a graph to executable runtime graph",
+        "description": "Compiles the DSL graph definition into an executable StateGraph. Returns compilation status and any errors.",
+        "operationId": "compileGraph",
         "parameters": [
           {
-            "$ref": "#/components/parameters/workflowId"
+            "$ref": "#/components/parameters/graphId"
           }
         ],
         "responses": {
@@ -452,15 +452,15 @@
         }
       }
     },
-    "/api/v1/workflows/{id}/execute": {
+    "/api/v1/graphs/{id}/execute": {
       "post": {
         "tags": ["execution"],
-        "summary": "Execute a workflow (non-streaming)",
-        "description": "Executes the workflow and returns all events after completion.",
-        "operationId": "executeWorkflow",
+        "summary": "Execute a graph (non-streaming)",
+        "description": "Executes the graph and returns all events after completion.",
+        "operationId": "executeGraph",
         "parameters": [
           {
-            "$ref": "#/components/parameters/workflowId"
+            "$ref": "#/components/parameters/graphId"
           }
         ],
         "requestBody": {
@@ -487,15 +487,15 @@
         }
       }
     },
-    "/api/v1/workflows/{id}/execute/stream": {
+    "/api/v1/graphs/{id}/execute/stream": {
       "post": {
         "tags": ["execution"],
-        "summary": "Execute a workflow with SSE streaming",
-        "description": "Executes the workflow and streams events via Server-Sent Events.",
-        "operationId": "executeWorkflowStream",
+        "summary": "Execute a graph with SSE streaming",
+        "description": "Executes the graph and streams events via Server-Sent Events.",
+        "operationId": "executeGraphStream",
         "parameters": [
           {
-            "$ref": "#/components/parameters/workflowId"
+            "$ref": "#/components/parameters/graphId"
           }
         ],
         "requestBody": {
@@ -526,11 +526,11 @@
   },
   "components": {
     "parameters": {
-      "workflowId": {
+      "graphId": {
         "name": "id",
         "in": "path",
         "required": true,
-        "description": "Workflow ID",
+        "description": "Graph ID",
         "schema": {
           "type": "string"
         }
@@ -643,12 +643,12 @@
           }
         }
       },
-      "Workflow": {
-        "$ref": "../../dsl/schema/engine_dsl.schema.json#/$defs/Workflow"
+      "Graph": {
+        "$ref": "../../dsl/schema/engine_dsl.schema.json#/$defs/Graph"
       },
       "FieldUsage": {
         "type": "object",
-        "description": "Describes how a particular state field is used in the workflow.",
+        "description": "Describes how a particular state field is used in the graph.",
         "properties": {
           "name": {
             "type": "string"
@@ -680,7 +680,7 @@
           }
         }
       },
-      "WorkflowSchemaResponse": {
+      "GraphSchemaResponse": {
         "type": "object",
         "properties": {
           "fields": {
@@ -691,7 +691,7 @@
           }
         }
       },
-      "WorkflowVar": {
+      "GraphVar": {
         "type": "object",
         "properties": {
           "variable": {
@@ -709,7 +709,7 @@
           }
         }
       },
-      "WorkflowVarsNode": {
+      "GraphVarsNode": {
         "type": "object",
         "properties": {
           "id": {
@@ -721,18 +721,18 @@
           "vars": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/WorkflowVar"
+              "$ref": "#/components/schemas/GraphVar"
             }
           }
         }
       },
-      "WorkflowVarsNodeRequest": {
+      "GraphVarsNodeRequest": {
         "type": "object",
-        "description": "Request body for /workflows/vars/node. Carries the full workflow draft plus the node_id currently being edited.",
-        "required": ["workflow", "node_id"],
+        "description": "Request body for /graphs/vars/node. Carries the full graph draft plus the node_id currently being edited.",
+        "required": ["graph", "node_id"],
         "properties": {
-          "workflow": {
-            "$ref": "#/components/schemas/Workflow"
+          "graph": {
+            "$ref": "#/components/schemas/Graph"
           },
           "node_id": {
             "type": "string",
@@ -740,21 +740,21 @@
           }
         }
       },
-      "WorkflowVarsResponse": {
+      "GraphVarsResponse": {
         "type": "object",
         "properties": {
           "nodes": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/WorkflowVarsNode"
+              "$ref": "#/components/schemas/GraphVarsNode"
             }
           }
         }
       },
-      "WorkflowResponse": {
+      "GraphResponse": {
         "allOf": [
           {
-            "$ref": "#/components/schemas/Workflow"
+            "$ref": "#/components/schemas/Graph"
           },
           {
             "type": "object",
@@ -774,13 +774,13 @@
           }
         ]
       },
-      "WorkflowList": {
+      "GraphList": {
         "type": "object",
         "properties": {
-          "workflows": {
+          "graphs": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/WorkflowResponse"
+              "$ref": "#/components/schemas/GraphResponse"
             }
           },
           "total": {
@@ -839,7 +839,7 @@
         "properties": {
           "input": {
             "type": "object",
-            "description": "Initial state/input for the workflow",
+            "description": "Initial state/input for the graph",
             "additionalProperties": true
           },
           "config": {
@@ -870,7 +870,7 @@
           },
           "final_state": {
             "type": "object",
-            "description": "Final workflow state",
+            "description": "Final graph state",
             "additionalProperties": true
           },
           "events": {

@@ -5,26 +5,26 @@
 //
 // trpc-agent-go is licensed under the Apache License Version 2.0.
 //
-// Package dsl provides the DSL (Domain-Specific Language) for defining workflows.
-// It allows users to define workflows in JSON format that can be compiled into
+// Package dsl provides the DSL (Domain-Specific Language) for defining graphs.
+// It allows users to define graphs in JSON format that can be compiled into
 // executable trpc-agent-go StateGraphs.
 package dsl
 
-// Workflow represents a complete workflow definition in the engine DSL.
+// Graph represents a complete graph definition in the engine DSL.
 // It only contains fields that are required for execution by the graph
 // engine and intentionally avoids any UI-specific concepts such as
 // positions or visual layout information.
-type Workflow struct {
+type Graph struct {
 	// Version is the DSL version (e.g., "1.0")
 	Version string `json:"version"`
 
-	// Name is the workflow name
+	// Name is the graph name
 	Name string `json:"name"`
 
-	// Description describes what this workflow does
+	// Description describes what this graph does
 	Description string `json:"description,omitempty"`
 
-	// Nodes are the component instances in this workflow
+	// Nodes are the component instances in this graph
 	Nodes []Node `json:"nodes"`
 
 	// Edges define the connections between nodes
@@ -33,9 +33,9 @@ type Workflow struct {
 	// ConditionalEdges define conditional routing between nodes
 	ConditionalEdges []ConditionalEdge `json:"conditional_edges,omitempty"`
 
-	// StateVariables declares workflow-level state variables that can be read
+	// StateVariables declares graph-level state variables that can be read
 	// and written by nodes (for example via builtin.set_state). This allows
-	// the workflow author to define the shape and reducer behavior of global
+	// the graph author to define the shape and reducer behavior of global
 	// state independently of any particular component.
 	StateVariables []StateVariable `json:"state_variables,omitempty"`
 
@@ -44,11 +44,11 @@ type Workflow struct {
 	// outgoing edge during compilation.
 	StartNodeID string `json:"start_node_id"`
 
-	// Metadata contains additional workflow-level metadata
+	// Metadata contains additional graph-level metadata
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
-// StateVariable describes a workflow-level state variable. It is the single
+// StateVariable describes a graph-level state variable. It is the single
 // source of truth for the variable's existence and coarse-grained type; nodes
 // such as builtin.set_state only assign to already-declared variables.
 type StateVariable struct {
@@ -68,7 +68,7 @@ type StateVariable struct {
 	Description string `json:"description,omitempty"`
 
 	// Default is the default value if the state field is not present when
-	// the workflow starts. When omitted, no default is applied.
+	// the graph starts. When omitted, no default is applied.
 	Default any `json:"default,omitempty"`
 
 	// Reducer specifies the reducer function name for this state field.

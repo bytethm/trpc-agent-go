@@ -17,7 +17,7 @@ import (
 )
 
 // ToolSetRegistry is a thread-safe registry for managing ToolSet instances.
-// ToolSets are registered at application startup and referenced by name in DSL workflows.
+// ToolSets are registered at application startup and referenced by name in DSL graphs.
 //
 // Note: Built-in ToolSets (like file) are automatically registered in
 // DefaultToolSetRegistry when you import:
@@ -148,4 +148,3 @@ func (r *ToolSetRegistry) Clear() {
 
 	r.toolSets = make(map[string]tool.ToolSet)
 }
-

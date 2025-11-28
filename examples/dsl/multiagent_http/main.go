@@ -46,33 +46,33 @@ func run() error {
 	modelRegistry.MustRegister(modelName, modelClient)
 	fmt.Printf("✅ Model registered: %s\n", modelName)
 
-	// Load workflow
+	// Load graph definition
 	data, err := os.ReadFile("workflow.json")
 	if err != nil {
 		return fmt.Errorf("failed to read workflow.json: %w", err)
 	}
 
-	var workflow dsl.Workflow
-	if err := json.Unmarshal(data, &workflow); err != nil {
+	var graphDef dsl.Graph
+	if err := json.Unmarshal(data, &graphDef); err != nil {
 		return fmt.Errorf("failed to parse workflow.json: %w", err)
 	}
 
-	fmt.Println("🚀 Multi-Agent HTTP DSL Example")
+	fmt.Println("🚀 Multi-Agent HTTP DSL Graph Example")
 	fmt.Println("==================================================")
-	fmt.Printf("✅ Loaded workflow: %s\n", workflow.Name)
-	fmt.Printf("   Description: %s\n", workflow.Description)
-	fmt.Printf("   Nodes: %d\n", len(workflow.Nodes))
+	fmt.Printf("✅ Loaded graph: %s\n", graphDef.Name)
+	fmt.Printf("   Description: %s\n", graphDef.Description)
+	fmt.Printf("   Nodes: %d\n", len(graphDef.Nodes))
 	fmt.Println()
 
-	// Compile workflow
+	// Compile graph
 	compiler := dsl.NewCompiler(registry.DefaultRegistry).
 		WithModelRegistry(modelRegistry)
 
-	compiledGraph, err := compiler.Compile(&workflow)
+	compiledGraph, err := compiler.Compile(&graphDef)
 	if err != nil {
-		return fmt.Errorf("failed to compile workflow: %w", err)
+		return fmt.Errorf("failed to compile graph: %w", err)
 	}
-	fmt.Println("✅ Workflow compiled successfully")
+	fmt.Println("✅ Graph compiled successfully")
 	fmt.Println()
 
 	// Create agent & runner
@@ -84,7 +84,7 @@ func run() error {
 	}
 
 	sessionService := inmemory.NewSessionService()
-	appRunner := runner.NewRunner("multiagent-http-workflow", graphAgent, runner.WithSessionService(sessionService))
+	appRunner := runner.NewRunner("multiagent-http-graph", graphAgent, runner.WithSessionService(sessionService))
 	defer appRunner.Close()
 
 	queries := []string{
@@ -98,7 +98,7 @@ func run() error {
 		fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		fmt.Printf("Test %d: %s\n", i+1, q)
 		fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-		if err := executeWorkflow(ctx, appRunner, userID, fmt.Sprintf("session-%d", i+1), q); err != nil {
+		if err := executeGraph(ctx, appRunner, userID, fmt.Sprintf("session-%d", i+1), q); err != nil {
 			return err
 		}
 	}
@@ -106,11 +106,11 @@ func run() error {
 	return nil
 }
 
-func executeWorkflow(ctx context.Context, appRunner runner.Runner, userID, sessionID, userInput string) error {
+func executeGraph(ctx context.Context, appRunner runner.Runner, userID, sessionID, userInput string) error {
 	msg := model.NewUserMessage(userInput)
 	events, err := appRunner.Run(ctx, userID, sessionID, msg)
 	if err != nil {
-		return fmt.Errorf("failed to run workflow: %w", err)
+		return fmt.Errorf("failed to run graph: %w", err)
 	}
 
 	var (
@@ -122,7 +122,7 @@ func executeWorkflow(ctx context.Context, appRunner runner.Runner, userID, sessi
 
 	for ev := range events {
 		if ev.Error != nil {
-			return fmt.Errorf("workflow error: %s", ev.Error.Message)
+			return fmt.Errorf("graph error: %s", ev.Error.Message)
 		}
 
 		if len(ev.Choices) > 0 {

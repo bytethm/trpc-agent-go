@@ -20,18 +20,18 @@ import (
 
 func init() {
 	// Register the SetState component so that it can be referenced from DSL
-	// workflows as "builtin.set_state".
+	// graphs as "builtin.set_state".
 	registry.MustRegister(&SetStateComponent{})
 }
 
-// SetStateComponent assigns values to existing workflow state variables.
+// SetStateComponent assigns values to existing graph state variables.
 // It evaluates a list of CEL expressions and writes the results into the
 // corresponding state fields. Variable declaration (type/default) is handled
-// at the workflow/start level; this component is purely an assignment node.
+// at the graph/start level; this component is purely an assignment node.
 //
 // Each assignment.expr is a CEL expression string evaluated with the
 // following variables available:
-//   - state: graph.State (global workflow state)
+//   - state: graph.State (global graph state)
 //   - input: JSON-like object representing the node input (currently unused
 //            for builtin.set_state and left as nil).
 type SetStateComponent struct{}
@@ -50,7 +50,7 @@ func (c *SetStateComponent) Metadata() registry.ComponentMetadata {
 	return registry.ComponentMetadata{
 		Name:        "builtin.set_state",
 		DisplayName: "Set State",
-		Description: "Assign values to workflow state variables based on expressions",
+		Description: "Assign values to graph state variables based on expressions",
 		Category:    "Data",
 		Version:     "1.0.0",
 

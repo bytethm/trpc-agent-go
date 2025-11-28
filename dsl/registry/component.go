@@ -5,7 +5,7 @@
 //
 // trpc-agent-go is licensed under the Apache License Version 2.0.
 //
-// Package registry provides component registration and management for DSL workflows.
+// Package registry provides component registration and management for DSL graphs.
 package registry
 
 import (
@@ -15,8 +15,8 @@ import (
 	"trpc.group/trpc-go/trpc-agent-go/graph"
 )
 
-// Component represents a reusable workflow component that can be referenced in DSL.
-// Components are the building blocks of workflows, providing specific functionality
+// Component represents a reusable graph component that can be referenced in DSL.
+// Components are the building blocks of graphs, providing specific functionality
 // like LLM calls, HTTP requests, data transformations, etc.
 type Component interface {
 	// Metadata returns the component's metadata including name, description, and I/O schema

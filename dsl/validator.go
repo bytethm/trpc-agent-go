@@ -13,7 +13,7 @@ import (
 	"trpc.group/trpc-go/trpc-agent-go/graph"
 )
 
-// Validator validates DSL workflows.
+// Validator validates DSL graphs.
 // It performs multi-level validation:
 // 1. Structure validation (required fields, valid references)
 // 2. Semantic validation (no cycles, reachable nodes)
@@ -30,53 +30,53 @@ func NewValidator(reg *registry.Registry) *Validator {
 	}
 }
 
-// Validate validates an engine-level workflow. It operates purely on the
+// Validate validates an engine-level graph. It operates purely on the
 // execution DSL and does not depend on any UI-specific concepts.
-func (v *Validator) Validate(workflow *Workflow) error {
-	if workflow == nil {
-		return fmt.Errorf("workflow is nil")
+func (v *Validator) Validate(graphDef *Graph) error {
+	if graphDef == nil {
+		return fmt.Errorf("graph is nil")
 	}
-	if err := v.validateStructure(workflow); err != nil {
+	if err := v.validateStructure(graphDef); err != nil {
 		return fmt.Errorf("structure validation failed: %w", err)
 	}
 
-	if err := v.validateStateVariables(workflow); err != nil {
+	if err := v.validateStateVariables(graphDef); err != nil {
 		return fmt.Errorf("state variables validation failed: %w", err)
 	}
 
-	if err := v.validateComponents(workflow); err != nil {
+	if err := v.validateComponents(graphDef); err != nil {
 		return fmt.Errorf("component validation failed: %w", err)
 	}
 
-	if err := v.validateTopology(workflow); err != nil {
+	if err := v.validateTopology(graphDef); err != nil {
 		return fmt.Errorf("topology validation failed: %w", err)
 	}
 
 	return nil
 }
 
-// validateStructure validates the basic structure of the workflow.
-func (v *Validator) validateStructure(workflow *Workflow) error {
+// validateStructure validates the basic structure of the graph.
+func (v *Validator) validateStructure(graphDef *Graph) error {
 	// Check version
-	if workflow.Version == "" {
-		return fmt.Errorf("workflow version is required")
+	if graphDef.Version == "" {
+		return fmt.Errorf("graph version is required")
 	}
 
 	// Check name
-	if workflow.Name == "" {
-		return fmt.Errorf("workflow name is required")
+	if graphDef.Name == "" {
+		return fmt.Errorf("graph name is required")
 	}
 
 	// Check nodes
-	if len(workflow.Nodes) == 0 {
-		return fmt.Errorf("workflow must have at least one node")
+	if len(graphDef.Nodes) == 0 {
+		return fmt.Errorf("graph must have at least one node")
 	}
 
 	// Check for duplicate node IDs and component references. Track builtin.start
 	// node (if present) so we can enforce related invariants.
 	nodeIDs := make(map[string]bool)
 	startNodeID := ""
-	for _, node := range workflow.Nodes {
+	for _, node := range graphDef.Nodes {
 		if node.ID == "" {
 			return fmt.Errorf("node ID cannot be empty")
 		}
@@ -102,23 +102,23 @@ func (v *Validator) validateStructure(workflow *Workflow) error {
 	}
 
 	// Check start node ID
-	if workflow.StartNodeID == "" {
-		return fmt.Errorf("workflow start_node_id is required")
+	if graphDef.StartNodeID == "" {
+		return fmt.Errorf("graph start_node_id is required")
 	}
-	if !nodeIDs[workflow.StartNodeID] {
-		return fmt.Errorf("start_node_id %s does not exist", workflow.StartNodeID)
+	if !nodeIDs[graphDef.StartNodeID] {
+		return fmt.Errorf("start_node_id %s does not exist", graphDef.StartNodeID)
 	}
 
-	// If a builtin.start node is present, the workflow start_node_id must be
+	// If a builtin.start node is present, the graph start_node_id must be
 	// that node. The actual executable entry point will be derived from its
 	// outgoing edge by the compiler.
-	if startNodeID != "" && workflow.StartNodeID != startNodeID {
-		return fmt.Errorf("workflow start_node_id must be builtin.start node %s when present (got %s)", startNodeID, workflow.StartNodeID)
+	if startNodeID != "" && graphDef.StartNodeID != startNodeID {
+		return fmt.Errorf("graph start_node_id must be builtin.start node %s when present (got %s)", startNodeID, graphDef.StartNodeID)
 	}
 
 	// Validate edges
 	startOutCount := 0
-	for _, edge := range workflow.Edges {
+	for _, edge := range graphDef.Edges {
 		// Allow virtual Start and End nodes without explicit node definitions.
 		if edge.Source != graph.Start && !nodeIDs[edge.Source] {
 			return fmt.Errorf("edge %s: source node %s does not exist", edge.ID, edge.Source)
@@ -148,7 +148,7 @@ func (v *Validator) validateStructure(workflow *Workflow) error {
 	}
 
 	// Validate conditional edges
-	for _, condEdge := range workflow.ConditionalEdges {
+	for _, condEdge := range graphDef.ConditionalEdges {
 		if !nodeIDs[condEdge.From] {
 			return fmt.Errorf("conditional edge %s: source node %s does not exist", condEdge.ID, condEdge.From)
 		}
@@ -178,12 +178,12 @@ func (v *Validator) validateStructure(workflow *Workflow) error {
 	return nil
 }
 
-// validateStateVariables validates workflow-level state variable declarations
+// validateStateVariables validates graph-level state variable declarations
 // and ensures builtin.set_state assignments only target declared variables
 // when declarations are present.
-func (v *Validator) validateStateVariables(workflow *Workflow) error {
+func (v *Validator) validateStateVariables(graphDef *Graph) error {
 	declared := make(map[string]StateVariable)
-	for idx, sv := range workflow.StateVariables {
+	for idx, sv := range graphDef.StateVariables {
 		name := strings.TrimSpace(sv.Name)
 		if name == "" {
 			return fmt.Errorf("state_variables[%d]: name is required", idx)
@@ -200,7 +200,7 @@ func (v *Validator) validateStateVariables(workflow *Workflow) error {
 	}
 
 	// Validate builtin.set_state assignments.
-	for _, node := range workflow.Nodes {
+	for _, node := range graphDef.Nodes {
 		engine := node.EngineNode
 		if engine.NodeType != "builtin.set_state" {
 			continue
@@ -234,7 +234,7 @@ func (v *Validator) validateStateVariables(workflow *Workflow) error {
 			}
 
 			if _, exists := declared[field]; !exists {
-				return fmt.Errorf("node %s: assignments[%d] field %q is not declared in workflow.state_variables", node.ID, i, field)
+				return fmt.Errorf("node %s: assignments[%d] field %q is not declared in state_variables", node.ID, i, field)
 			}
 		}
 	}
@@ -243,8 +243,8 @@ func (v *Validator) validateStateVariables(workflow *Workflow) error {
 }
 
 // validateComponents validates that all referenced components exist in the registry.
-func (v *Validator) validateComponents(workflow *Workflow) error {
-	for _, node := range workflow.Nodes {
+func (v *Validator) validateComponents(graphDef *Graph) error {
+	for _, node := range graphDef.Nodes {
 		engine := node.EngineNode
 
 		// Check if component exists
@@ -284,14 +284,14 @@ func (v *Validator) validateConfig(nodeID string, config map[string]interface{},
 	return nil
 }
 
-// validateTopology validates the workflow topology (no unreachable nodes, etc.).
-func (v *Validator) validateTopology(workflow *Workflow) error {
+// validateTopology validates the graph topology (no unreachable nodes, etc.).
+func (v *Validator) validateTopology(graphDef *Graph) error {
 	// Build adjacency list
 	adjacency := make(map[string][]string)
-	for _, edge := range workflow.Edges {
+	for _, edge := range graphDef.Edges {
 		adjacency[edge.Source] = append(adjacency[edge.Source], edge.Target)
 	}
-	for _, condEdge := range workflow.ConditionalEdges {
+	for _, condEdge := range graphDef.ConditionalEdges {
 		for _, kase := range condEdge.Condition.Cases {
 			adjacency[condEdge.From] = append(adjacency[condEdge.From], kase.Target)
 		}
@@ -302,11 +302,11 @@ func (v *Validator) validateTopology(workflow *Workflow) error {
 
 	// Find reachable nodes from start node
 	reachable := make(map[string]bool)
-	v.dfs(workflow.StartNodeID, adjacency, reachable)
+	v.dfs(graphDef.StartNodeID, adjacency, reachable)
 
 	// Check for unreachable nodes
-	for _, node := range workflow.Nodes {
-		if !reachable[node.ID] && node.ID != workflow.StartNodeID {
+	for _, node := range graphDef.Nodes {
+		if !reachable[node.ID] && node.ID != graphDef.StartNodeID {
 			return fmt.Errorf("node %s is unreachable from start_node_id", node.ID)
 		}
 	}

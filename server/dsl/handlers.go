@@ -200,83 +200,83 @@ func (s *Server) handleListToolSets(w http.ResponseWriter, r *http.Request) {
 }
 
 // ============================================================================
-// Workflow CRUD Handlers
+// Graph CRUD Handlers
 // ============================================================================
 
-// handleListWorkflows lists all workflows.
-func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement workflow storage and pagination
+// handleListGraphs lists all graphs.
+func (s *Server) handleListGraphs(w http.ResponseWriter, r *http.Request) {
+	// TODO: Implement graph storage and pagination
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"workflows": []interface{}{},
-		"total":     0,
-		"page":      1,
-		"limit":     20,
+		"graphs": []interface{}{},
+		"total":  0,
+		"page":   1,
+		"limit":  20,
 	})
 }
 
-// handleCreateWorkflow creates a new workflow.
-func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
-	var workflow ViewWorkflow
-	if err := json.NewDecoder(r.Body).Decode(&workflow); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid workflow JSON: "+err.Error())
+// handleCreateGraph creates a new graph.
+func (s *Server) handleCreateGraph(w http.ResponseWriter, r *http.Request) {
+	var viewGraph ViewGraph
+	if err := json.NewDecoder(r.Body).Decode(&viewGraph); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid graph JSON: "+err.Error())
 		return
 	}
 
-	// TODO: Validate workflow
-	// TODO: Store workflow in database
-	// TODO: Generate workflow ID
+	// TODO: Validate graph
+	// TODO: Store graph in database
+	// TODO: Generate graph ID
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
 		"id":      "TODO-generate-id",
-		"message": "Workflow created (TODO: implement storage)",
+		"message": "Graph created (TODO: implement storage)",
 	})
 }
 
-// handleGetWorkflow gets a workflow by ID.
-func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
+// handleGetGraph gets a graph by ID.
+func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	// TODO: Retrieve workflow from storage
+	// TODO: Retrieve graph from storage
 	_ = id
 
-	respondError(w, http.StatusNotImplemented, "TODO: implement workflow storage")
+	respondError(w, http.StatusNotImplemented, "TODO: implement graph storage")
 }
 
-// handleUpdateWorkflow updates a workflow.
-func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
+// handleUpdateGraph updates a graph.
+func (s *Server) handleUpdateGraph(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	var workflow ViewWorkflow
-	if err := json.NewDecoder(r.Body).Decode(&workflow); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid workflow JSON: "+err.Error())
+	var viewGraph ViewGraph
+	if err := json.NewDecoder(r.Body).Decode(&viewGraph); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid graph JSON: "+err.Error())
 		return
 	}
 
-	// TODO: Update workflow in storage
+	// TODO: Update graph in storage
 	_ = id
 
-	respondError(w, http.StatusNotImplemented, "TODO: implement workflow storage")
+	respondError(w, http.StatusNotImplemented, "TODO: implement graph storage")
 }
 
-// handleDeleteWorkflow deletes a workflow.
-func (s *Server) handleDeleteWorkflow(w http.ResponseWriter, r *http.Request) {
+// handleDeleteGraph deletes a graph.
+func (s *Server) handleDeleteGraph(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	// TODO: Delete workflow from storage
+	// TODO: Delete graph from storage
 	_ = id
 
-	respondError(w, http.StatusNotImplemented, "TODO: implement workflow storage")
+	respondError(w, http.StatusNotImplemented, "TODO: implement graph storage")
 }
 
 // ============================================================================
 // Validation and Compilation Handlers
 // ============================================================================
 
-// handleValidateWorkflow validates a workflow DSL.
-func (s *Server) handleValidateWorkflow(w http.ResponseWriter, r *http.Request) {
-	var viewWorkflow ViewWorkflow
-	if err := json.NewDecoder(r.Body).Decode(&viewWorkflow); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid workflow JSON: "+err.Error())
+// handleValidateGraph validates a graph DSL.
+func (s *Server) handleValidateGraph(w http.ResponseWriter, r *http.Request) {
+	var viewGraph ViewGraph
+	if err := json.NewDecoder(r.Body).Decode(&viewGraph); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid graph JSON: "+err.Error())
 		return
 	}
 
@@ -286,15 +286,15 @@ func (s *Server) handleValidateWorkflow(w http.ResponseWriter, r *http.Request) 
 	// - Check configuration parameters are valid
 	// - Check for cycles (if not allowed)
 
-	// For now, just try to compile the engine-level workflow converted from view DSL.
-	engineWorkflow := viewWorkflow.ToEngineWorkflow()
-	_, err := s.compiler.Compile(engineWorkflow)
+	// For now, just try to compile the engine-level graph converted from view DSL.
+	engineGraph := viewGraph.ToEngineGraph()
+	_, err := s.compiler.Compile(engineGraph)
 	if err != nil {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"valid": false,
 			"errors": []map[string]string{
 				{
-					"field":   "workflow",
+					"field":   "graph",
 					"message": err.Error(),
 				},
 			},
@@ -308,21 +308,21 @@ func (s *Server) handleValidateWorkflow(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// handleWorkflowSchema returns inferred state schema and field usage for a workflow.
+// handleGraphSchema returns inferred state schema and field usage for a graph.
 // This is intended for frontend/editor usage to provide variable suggestions.
-func (s *Server) handleWorkflowSchema(w http.ResponseWriter, r *http.Request) {
-	var viewWorkflow ViewWorkflow
-	if err := json.NewDecoder(r.Body).Decode(&viewWorkflow); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid workflow JSON: "+err.Error())
+func (s *Server) handleGraphSchema(w http.ResponseWriter, r *http.Request) {
+	var viewGraph ViewGraph
+	if err := json.NewDecoder(r.Body).Decode(&viewGraph); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid graph JSON: "+err.Error())
 		return
 	}
 
-	engineWorkflow := viewWorkflow.ToEngineWorkflow()
+	engineGraph := viewGraph.ToEngineGraph()
 
 	// Create a fresh SchemaInference using the same component registry as the compiler.
 	si := dsl.NewSchemaInference(s.componentRegistry)
 
-	_, usage, err := si.InferSchemaAndUsage(engineWorkflow)
+	_, usage, err := si.InferSchemaAndUsage(engineGraph)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "Failed to infer schema: "+err.Error())
 		return
@@ -340,7 +340,7 @@ func (s *Server) handleWorkflowSchema(w http.ResponseWriter, r *http.Request) {
 }
 
 // ============================================================================
-// Workflow Variable View (per-node variables for editors)
+// Graph Variable View (per-node variables for editors)
 // ============================================================================
 
 // nodeVariable describes a single variable exposed by a node for use in
@@ -359,21 +359,21 @@ type nodeVarsResponse struct {
 	Vars  []nodeVariable `json:"vars"`
 }
 
-// computeNodeVars builds the per-node variable view for a compiled engine workflow.
-// It is shared by /workflows/vars (all nodes) and /workflows/vars/node (single node).
+// computeNodeVars builds the per-node variable view for a compiled engine graph.
+// It is shared by /graphs/vars (all nodes) and /graphs/vars/node (single node).
 // Semantics: for each node, return the list of **state variables that can be
 // referenced in expressions**, not just the fields written by that node.
 // Variable names follow the "state.<field>" convention so that editors can
 // insert them directly into templates/expressions.
-func (s *Server) computeNodeVars(engineWorkflow *dsl.Workflow) ([]nodeVarsResponse, error) {
-	if engineWorkflow == nil {
+func (s *Server) computeNodeVars(engineGraph *dsl.Graph) ([]nodeVarsResponse, error) {
+	if engineGraph == nil {
 		return nil, nil
 	}
 
-	// Reuse the same schema inference as /workflows/schema so variable
+	// Reuse the same schema inference as /graphs/schema so variable
 	// suggestions are derived from the canonical StateSchema + FieldUsage.
 	si := dsl.NewSchemaInference(s.componentRegistry)
-	_, usage, err := si.InferSchemaAndUsage(engineWorkflow)
+	_, usage, err := si.InferSchemaAndUsage(engineGraph)
 	if err != nil {
 		return nil, err
 	}
@@ -417,8 +417,8 @@ func (s *Server) computeNodeVars(engineWorkflow *dsl.Workflow) ([]nodeVarsRespon
 		})
 	}
 
-	result := make([]nodeVarsResponse, 0, len(engineWorkflow.Nodes))
-	for _, n := range engineWorkflow.Nodes {
+	result := make([]nodeVarsResponse, 0, len(engineGraph.Nodes))
+	for _, n := range engineGraph.Nodes {
 		engine := n.EngineNode
 		result = append(result, nodeVarsResponse{
 			ID:    n.ID,
@@ -433,18 +433,18 @@ func (s *Server) computeNodeVars(engineWorkflow *dsl.Workflow) ([]nodeVarsRespon
 	return result, nil
 }
 
-// handleWorkflowVars returns, for a given workflow (view DSL), the list of
+// handleGraphVars returns, for a given graph (view DSL), the list of
 // variables produced by each node. This is intended for front-end editors to
 // drive "variable pickers" when configuring templates or HTTP requests.
-func (s *Server) handleWorkflowVars(w http.ResponseWriter, r *http.Request) {
-	var viewWorkflow ViewWorkflow
-	if err := json.NewDecoder(r.Body).Decode(&viewWorkflow); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid workflow JSON: "+err.Error())
+func (s *Server) handleGraphVars(w http.ResponseWriter, r *http.Request) {
+	var viewGraph ViewGraph
+	if err := json.NewDecoder(r.Body).Decode(&viewGraph); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid graph JSON: "+err.Error())
 		return
 	}
 
-	engineWorkflow := viewWorkflow.ToEngineWorkflow()
-	result, err := s.computeNodeVars(engineWorkflow)
+	engineGraph := viewGraph.ToEngineGraph()
+	result, err := s.computeNodeVars(engineGraph)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "Failed to infer variables: "+err.Error())
 		return
@@ -455,19 +455,19 @@ func (s *Server) handleWorkflowVars(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// workflowNodeVarsRequest is used by /api/v1/workflows/vars/node to request
-// variables for a single node while still sending the full workflow draft.
-type workflowNodeVarsRequest struct {
-	Workflow ViewWorkflow `json:"workflow"`
-	NodeID   string       `json:"node_id"`
+// graphNodeVarsRequest is used by /api/v1/graphs/vars/node to request
+// variables for a single node while still sending the full graph draft.
+type graphNodeVarsRequest struct {
+	Graph  ViewGraph `json:"graph"`
+	NodeID string    `json:"node_id"`
 }
 
-// handleWorkflowNodeVars returns variables for a single node inside the given
-// workflow. This is a convenience endpoint for editors that want to fetch
+// handleGraphNodeVars returns variables for a single node inside the given
+// graph. This is a convenience endpoint for editors that want to fetch
 // variables scoped to the node currently being edited, without having to
-// traverse the full /workflows/vars response.
-func (s *Server) handleWorkflowNodeVars(w http.ResponseWriter, r *http.Request) {
-	var req workflowNodeVarsRequest
+// traverse the full /graphs/vars response.
+func (s *Server) handleGraphNodeVars(w http.ResponseWriter, r *http.Request) {
+	var req graphNodeVarsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid request JSON: "+err.Error())
 		return
@@ -477,8 +477,8 @@ func (s *Server) handleWorkflowNodeVars(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	engineWorkflow := req.Workflow.ToEngineWorkflow()
-	nodes, err := s.computeNodeVars(engineWorkflow)
+	engineGraph := req.Graph.ToEngineGraph()
+	nodes, err := s.computeNodeVars(engineGraph)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "Failed to infer variables: "+err.Error())
 		return
@@ -491,28 +491,28 @@ func (s *Server) handleWorkflowNodeVars(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	respondError(w, http.StatusNotFound, "node not found in workflow")
+	respondError(w, http.StatusNotFound, "node not found in graph")
 }
 
-// handleCompileWorkflow compiles a workflow to executable graph.
-func (s *Server) handleCompileWorkflow(w http.ResponseWriter, r *http.Request) {
+// handleCompileGraph compiles a graph definition to an executable runtime graph.
+func (s *Server) handleCompileGraph(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	// TODO: Retrieve workflow from storage
+	// TODO: Retrieve graph from storage
 	_ = id
 
-	// TODO: Compile workflow
+	// TODO: Compile graph
 	// TODO: Cache compiled graph
 
-	respondError(w, http.StatusNotImplemented, "TODO: implement workflow compilation")
+	respondError(w, http.StatusNotImplemented, "TODO: implement graph compilation")
 }
 
 // ============================================================================
 // Execution Handlers
 // ============================================================================
 
-// handleExecuteWorkflow executes a workflow (non-streaming).
-func (s *Server) handleExecuteWorkflow(w http.ResponseWriter, r *http.Request) {
+// handleExecuteGraph executes a graph (non-streaming).
+func (s *Server) handleExecuteGraph(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	// Parse execution request
@@ -528,19 +528,19 @@ func (s *Server) handleExecuteWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Retrieve workflow from storage
-	// TODO: Compile workflow if not cached
-	// TODO: Execute workflow
+	// TODO: Retrieve graph from storage
+	// TODO: Compile graph if not cached
+	// TODO: Execute graph
 	// TODO: Collect all events
 	// TODO: Return final state and events
 
 	_ = id
 
-	respondError(w, http.StatusNotImplemented, "TODO: implement workflow execution")
+	respondError(w, http.StatusNotImplemented, "TODO: implement graph execution")
 }
 
-// handleExecuteWorkflowStream executes a workflow with SSE streaming.
-func (s *Server) handleExecuteWorkflowStream(w http.ResponseWriter, r *http.Request) {
+// handleExecuteGraphStream executes a graph with SSE streaming.
+func (s *Server) handleExecuteGraphStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	// Set SSE headers
@@ -563,9 +563,9 @@ func (s *Server) handleExecuteWorkflowStream(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// TODO: Retrieve workflow from storage
-	// TODO: Compile workflow if not cached
-	// TODO: Execute workflow
+	// TODO: Retrieve graph from storage
+	// TODO: Compile graph if not cached
+	// TODO: Execute graph
 	// TODO: Stream events via SSE
 	// TODO: Handle client disconnect
 

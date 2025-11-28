@@ -24,7 +24,7 @@ func init() {
 	registry.MustRegister(&EndComponent{})
 }
 
-// EndComponent is a simple component that marks the logical end of a workflow
+// EndComponent is a simple component that marks the logical end of a graph
 // branch. It does not modify state and can be used alongside the virtual
 // graph.End node to provide a concrete "End" node in the DSL/UX.
 type EndComponent struct{}
@@ -35,7 +35,7 @@ func (c *EndComponent) Metadata() registry.ComponentMetadata {
 	return registry.ComponentMetadata{
 		Name:        "builtin.end",
 		DisplayName: "End",
-		Description: "Marks the end of a workflow branch and can optionally set a structured final output",
+		Description: "Marks the end of a graph branch and can optionally set a structured final output",
 		Category:    "Control",
 		Version:     "1.0.0",
 
@@ -45,7 +45,7 @@ func (c *EndComponent) Metadata() registry.ComponentMetadata {
 			{
 				Name:        "end_structured_output",
 				DisplayName: "End Structured Output",
-				Description: "Structured workflow output object set by this End node",
+				Description: "Structured graph output object set by this End node",
 				Type:        "map[string]any",
 				TypeID:      "end.structured_output",
 				Kind:        "object",

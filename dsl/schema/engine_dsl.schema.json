@@ -2,10 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.com/engine_dsl.schema.json",
   "title": "Engine DSL Schema",
-  "description": "JSON Schema for the trpc-agent-go engine DSL (Workflow/Node/Edge/etc.).",
+  "description": "JSON Schema for the trpc-agent-go engine DSL (Graph/Node/Edge/etc.).",
   "type": "object",
   "$defs": {
-    "Workflow": {
+    "Graph": {
       "type": "object",
       "required": ["name", "nodes", "edges", "start_node_id"],
       "properties": {
@@ -15,15 +15,15 @@
         },
         "name": {
           "type": "string",
-          "description": "Workflow name (used for display and logging)."
+          "description": "Graph name (used for display and logging)."
         },
         "description": {
           "type": "string",
-          "description": "Human-readable description of the workflow."
+          "description": "Human-readable description of the graph."
         },
         "nodes": {
           "type": "array",
-          "description": "Executable nodes that make up the workflow.",
+          "description": "Executable nodes that make up the graph.",
           "items": { "$ref": "#/$defs/Node" }
         },
         "edges": {
@@ -38,7 +38,7 @@
         },
         "state_variables": {
           "type": "array",
-          "description": "Workflow-level state variables declared by the author.",
+          "description": "Graph-level state variables declared by the author.",
           "items": { "$ref": "#/$defs/StateVariable" }
         },
         "start_node_id": {
@@ -47,7 +47,7 @@
         },
         "metadata": {
           "type": "object",
-          "description": "Arbitrary workflow-level metadata (tags, owner, etc.).",
+          "description": "Arbitrary graph-level metadata (tags, owner, etc.).",
           "additionalProperties": true
         }
       },
@@ -59,7 +59,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique node identifier within the workflow."
+          "description": "Unique node identifier within the graph."
         },
         "label": {
           "type": "string",
@@ -88,7 +88,7 @@
                 "node_type": {
                   "type": "string",
                   "const": "builtin.start",
-                  "description": "Start node; marks the visual entry of the workflow."
+                  "description": "Start node; marks the visual entry of the graph."
                 },
                 "config": {
                   "type": "object",
@@ -118,7 +118,7 @@
                 "node_type": {
                   "type": "string",
                   "const": "builtin.end",
-                  "description": "End node; chooses the final workflow output."
+                  "description": "End node; chooses the final graph output."
                 },
                 "config": { "$ref": "#/$defs/EndConfig" }
               },
@@ -183,7 +183,7 @@
                 "node_type": {
                   "type": "string",
                   "const": "builtin.set_state",
-                  "description": "Set State node; assigns to workflow state variables."
+                  "description": "Set State node; assigns to graph state variables."
                 },
                 "config": { "$ref": "#/$defs/SetStateConfig" }
               },
@@ -544,7 +544,7 @@
         },
         "description": { "type": "string" },
         "default": {
-          "description": "Default value applied when the workflow starts."
+          "description": "Default value applied when the graph starts."
         },
         "reducer": {
           "type": "string",
@@ -555,6 +555,6 @@
     }
   },
   "properties": {
-    "workflow": { "$ref": "#/$defs/Workflow" }
+    "graph": { "$ref": "#/$defs/Graph" }
   }
 }

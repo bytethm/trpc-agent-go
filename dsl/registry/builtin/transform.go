@@ -20,7 +20,7 @@ import (
 
 func init() {
 	// Register the Transform component so that it can be referenced from DSL
-	// workflows as "builtin.transform".
+	// graphs as "builtin.transform".
 	registry.MustRegister(&TransformComponent{})
 }
 
@@ -30,7 +30,7 @@ func init() {
 //
 // The expression is a CEL expression evaluated in an environment that
 // exposes:
-//   - state: graph.State (global workflow state)
+//   - state: graph.State (global graph state)
 //   - input: JSON-like object for future extensibility (currently nil for
 //            builtin.transform).
 type TransformComponent struct{}

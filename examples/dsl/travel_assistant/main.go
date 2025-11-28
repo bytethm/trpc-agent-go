@@ -63,28 +63,28 @@ func run() error {
 	fmt.Println("✅ Built-in tools available: duckduckgo_search (auto-registered)")
 	fmt.Println()
 
-	// Step 2: Load workflow from JSON file
-	workflowData, err := os.ReadFile("workflow.json")
+	// Step 2: Load graph definition from JSON file
+	graphData, err := os.ReadFile("workflow.json")
 	if err != nil {
-		return fmt.Errorf("failed to read workflow file: %w", err)
+		return fmt.Errorf("failed to read graph file: %w", err)
 	}
 
-	var workflow dsl.Workflow
-	if err := json.Unmarshal(workflowData, &workflow); err != nil {
-		return fmt.Errorf("failed to parse workflow: %w", err)
+	var graphDef dsl.Graph
+	if err := json.Unmarshal(graphData, &graphDef); err != nil {
+		return fmt.Errorf("failed to parse graph: %w", err)
 	}
-	fmt.Printf("✅ Workflow loaded: %s\n", workflow.Name)
+	fmt.Printf("✅ Graph loaded: %s\n", graphDef.Name)
 
-	// Step 3: Compile workflow
+	// Step 3: Compile graph
 	compiler := dsl.NewCompiler(registry.DefaultRegistry).
 		WithModelRegistry(modelRegistry).
 		WithToolRegistry(registry.DefaultToolRegistry)
 
-	compiledGraph, err := compiler.Compile(&workflow)
+	compiledGraph, err := compiler.Compile(&graphDef)
 	if err != nil {
-		return fmt.Errorf("failed to compile workflow: %w", err)
+		return fmt.Errorf("failed to compile graph: %w", err)
 	}
-	fmt.Println("✅ Workflow compiled successfully")
+	fmt.Println("✅ Graph compiled successfully")
 	fmt.Println()
 
 	// Step 4: Create GraphAgent and Runner

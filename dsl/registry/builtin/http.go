@@ -28,7 +28,7 @@ func init() {
 // It is designed primarily for DSL usage and supports simple template-based
 // variable interpolation from graph.State.
 //
-// NOTE: For DSL workflows the Compiler will treat this as a normal component
+// NOTE: For DSL graphs the Compiler will treat this as a normal component
 // (no special NodeFunc like builtin.llm), so Execute is the main entrypoint.
 type HTTPRequestComponent struct{}
 

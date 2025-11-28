@@ -13,7 +13,7 @@ The goal is to:
 
 The engine-level schemas live in `dsl/schema/engine_dsl.schema.json`.
 
-- **Workflow**
+- **Graph**
   - Root object edited and sent by the frontend.
   - Fields: `version`, `name`, `description`, `nodes`, `edges`,
     `conditional_edges`, `state_variables`, `start_node_id`, `metadata`.
@@ -26,28 +26,28 @@ The engine-level schemas live in `dsl/schema/engine_dsl.schema.json`.
 
 From an editor's point of view, a typical session looks like:
 
-1. **User edits a draft workflow (in memory)**
+1. **User edits a draft graph (in memory)**
 2. **Ask backend for schema/variable/connection introspection as needed**
-3. **Validate the draft workflow**
-4. **Save / publish the workflow**
-5. **Execute the workflow**
+3. **Validate the draft graph**
+4. **Save / publish the graph**
+5. **Execute the graph**
 
-### 1. Maintain a draft Workflow on the frontend
+### 1. Maintain a draft Graph on the frontend
 
-The editor maintains a **draft workflow JSON** in memory. It should conform to
-`$defs.Workflow` from `dsl/schema/engine_dsl.schema.json` as closely as
+The editor maintains a **draft graph JSON** in memory. It should conform to
+`$defs.Graph` from `dsl/schema/engine_dsl.schema.json` as closely as
 possible, but it does not have to be valid at all times (e.g., while the user
 is in the middle of wiring edges).
 
-All introspection/validation APIs below accept this draft workflow as input.
+All introspection/validation APIs below accept this draft graph as input.
 
 ### 3. Introspection APIs
 
 #### 3.1 Infer global state fields and usage
 
-- **API**: `POST /api/v1/workflows/schema`
-- **Request body**: draft `Workflow` JSON
-- **Response**: `WorkflowSchemaResponse`
+- **API**: `POST /api/v1/graphs/schema`
+- **Request body**: draft `Graph` JSON
+- **Response**: `GraphSchemaResponse`
 
 ```jsonc
 {
@@ -66,7 +66,7 @@ All introspection/validation APIs below accept this draft workflow as input.
 
 Semantics:
 
-- Backend inspects the workflow and:
+- Backend inspects the graph and:
   - Adds built-in fields (messages, user_input, last_response, node_structured, etc.).
   - Applies `state_variables` declarations.
   - Incorporates component outputs and well-known nodes (e.g., `builtin.end` /
@@ -79,21 +79,21 @@ Editor usage:
 
 #### 3.2 Per-node variable view
 
-- **API (all nodes)**: `POST /api/v1/workflows/vars`  
-  **Body**: draft `Workflow` JSON  
-  **Response**: `WorkflowVarsResponse`
+- **API (all nodes)**: `POST /api/v1/graphs/vars`  
+  **Body**: draft `Graph` JSON  
+  **Response**: `GraphVarsResponse`
 
-- **API (single node, optional)**: `POST /api/v1/workflows/vars/node`  
+- **API (single node, optional)**: `POST /api/v1/graphs/vars/node`  
   **Body**:
 
   ```jsonc
   {
-    "workflow": { /* draft Workflow JSON */ },
+    "graph": { /* draft Graph JSON */ },
     "node_id": "classification_agent"
   }
   ```
 
-  **Response**: `WorkflowVarsNode`
+  **Response**: `GraphVarsNode`
 
 ```jsonc
 {
@@ -125,25 +125,25 @@ Editor usage:
 
 ##### Variable naming conventions
 
-The `variable` field in `WorkflowVar` is intended to be copied **verbatim**
+The `variable` field in `GraphVar` is intended to be copied **verbatim**
 into expressions/templates. Editors do not need to reverse‑engineer how it is
 computed; the backend guarantees that it is a valid path in the current
-workflow context.
+graph context.
 
 Recommended naming scheme (subject to evolution, but stable at the prefix
 level):
 
-- `state.*` – workflow‑level state fields
+- `state.*` – graph‑level state fields
   - Examples: `state.user_input`, `state.greeting`, `state.counter`,
     `state.end_structured_output`.
 - `nodes.<node_id>.*` – per‑node structured outputs
   - Examples:
     - `nodes.classification_agent.output_parsed.classification`
     - `nodes.transform_1.result.original_text`
-- `workflow.*` – workflow‑level inputs or metadata (if exposed)
-  - Example: `workflow.input_as_text` (for chat workflows).
+- `graph.*` – graph‑level inputs or metadata (if exposed)
+  - Example: `graph.input_as_text` (for chat-style graphs).
 
-When using the single-node API (`/workflows/vars/node`), the editor only
+When using the single-node API (`/graphs/vars/node`), the editor only
 receives the `vars` array for the node currently being edited, which is often
 enough for inline variable pickers without having to search through the full
 `nodes[]` list.
@@ -151,7 +151,7 @@ enough for inline variable pickers without having to search through the full
 Frontend guidance:
 
 - Treat `variable` as an opaque expression snippet:
-  - Display it (optionally grouping by the first segment: `state`/`nodes`/`workflow`).
+  - Display it (optionally grouping by the first segment: `state`/`nodes`/`graph`).
   - Insert it into the expression when the user selects it.
 - Use `kind` / `json_schema` for UI decisions (icons, editors, tree views),
   not for reconstructing engine internals.
@@ -162,12 +162,12 @@ When the user draws an edge between nodes (for example, Agent → MCP), the
 editor may want to know whether the connection is type-compatible, and why it
 is invalid if not.
 
-- **API**: `POST /api/v1/workflows/edges/inspect`
+- **API**: `POST /api/v1/graphs/edges/inspect`
 - **Request body**:
 
   ```jsonc
   {
-    "workflow": { /* draft Workflow JSON */ },
+    "graph": { /* draft Graph JSON */ },
     "edge": {
       "source_node_id": "Agent1",
       "target_node_id": "MCP1"
@@ -222,10 +222,10 @@ Editor usage:
 - Display the source/target schemas in an “Inspect connection” panel.
 - Show inline errors when the connection is invalid (e.g., missing fields).
 
-### 4. Validate draft workflow
+### 4. Validate draft graph
 
-- **API**: `POST /api/v1/workflows/validate`
-- **Request body**: draft `Workflow` JSON
+- **API**: `POST /api/v1/graphs/validate`
+- **Request body**: draft `Graph` JSON
 - **Response**: `ValidationResult`
 
 ```jsonc
@@ -240,7 +240,7 @@ Editor usage:
 
 Backend checks:
 
-- Workflow structure (version/name/nodes/edges/start_node_id).
+- Graph structure (version/name/nodes/edges/start_node_id).
 - Node/component references (node_type exists in registry).
 - Special rules for builtin nodes (e.g., `builtin.start` uniqueness and edges).
 - State variable rules (e.g., `builtin.set_state` assignments must target
@@ -251,23 +251,23 @@ Editor usage:
 
 - Show validation results before allowing publish/save.
 
-### 5. Save / publish workflow
+### 5. Save / publish graph
 
-- **Create**: `POST /api/v1/workflows`
-  - Body: final `Workflow` JSON
-  - Response: `WorkflowResponse` (includes `id`, timestamps).
+- **Create**: `POST /api/v1/graphs`
+  - Body: final `Graph` JSON
+  - Response: `GraphResponse` (includes `id`, timestamps).
 
-- **Update**: `PUT /api/v1/workflows/{id}`
-  - Body: updated `Workflow` JSON
+- **Update**: `PUT /api/v1/graphs/{id}`
+  - Body: updated `Graph` JSON
 
 Editor usage:
 
-- Save current workflow as a versioned asset (similar to OpenAI Agent Builder
+-- Save current graph as a versioned asset (similar to OpenAI Agent Builder
   publishing a workflow).
 
-### 6. Execute workflow
+### 6. Execute graph
 
-- **API**: `POST /api/v1/workflows/{id}/execute` (or `/execute/stream` for SSE)
+- **API**: `POST /api/v1/graphs/{id}/execute` (or `/execute/stream` for SSE)
 - **Request body**: `ExecutionRequest`
 
 ```jsonc
@@ -301,5 +301,5 @@ Editor usage:
 
 Editor usage:
 
-- Run workflow test executions from the UI.
+- Run graph test executions from the UI.
 - Show per-node traces based on `events`.

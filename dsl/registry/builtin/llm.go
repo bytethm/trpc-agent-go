@@ -5,7 +5,7 @@
 //
 // trpc-agent-go is licensed under the Apache License Version 2.0.
 //
-// Package builtin provides built-in components for DSL workflows.
+// Package builtin provides built-in components for DSL graphs.
 package builtin
 
 import (
@@ -103,7 +103,7 @@ func (c *LLMComponent) Metadata() registry.ComponentMetadata {
 }
 
 // Execute executes the LLM component.
-// NOTE: This method is deprecated and not used when compiling DSL workflows.
+// NOTE: This method is deprecated and not used when compiling DSL graphs.
 // The Compiler uses createLLMNodeFunc which directly calls graph.NewLLMNodeFunc
 // with the model instance from ModelRegistry. This method is kept for backward
 // compatibility with non-DSL usage.

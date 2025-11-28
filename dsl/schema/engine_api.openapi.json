@@ -2,22 +2,22 @@
   "openapi": "3.0.3",
   "info": {
     "title": "trpc-agent-go Engine DSL Core API",
-    "description": "Minimal OpenAPI description of the core engine-level HTTP APIs (compile, variable introspection, and edge inspection). This spec reuses the engine-level Workflow schema defined in engine_dsl.schema.json and is intended as the canonical contract for frontend/backend integration.",
+    "description": "Minimal OpenAPI description of the core engine-level HTTP APIs (compile, variable introspection, and edge inspection). This spec reuses the engine-level Graph schema defined in engine_dsl.schema.json and is intended as the canonical contract for frontend/backend integration.",
     "version": "1.0.0"
   },
   "paths": {
-    "/api/v1/workflows/compile": {
+    "/api/v1/graphs/compile": {
       "post": {
         "tags": ["engine"],
-        "summary": "Compile a workflow",
-        "description": "Compiles an engine-level Workflow into an executable graph. Editors can call this to surface compile-time diagnostics before running or saving.",
-        "operationId": "compileWorkflow",
+        "summary": "Compile a graph",
+        "description": "Compiles an engine-level Graph definition into an executable runtime graph. Editors can call this to surface compile-time diagnostics before running or saving.",
+        "operationId": "compileGraph",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CompileWorkflowRequest"
+                "$ref": "#/components/schemas/CompileGraphRequest"
               }
             }
           }
@@ -28,7 +28,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompileWorkflowResponse"
+                  "$ref": "#/components/schemas/CompileGraphResponse"
                 }
               }
             }
@@ -36,18 +36,18 @@
         }
       }
     },
-    "/api/v1/workflows/vars": {
+    "/api/v1/graphs/vars": {
       "post": {
         "tags": ["introspection"],
-        "summary": "List variables for a workflow",
-        "description": "Returns variables available in the workflow, optionally scoped to a single node. Used by editors to build variable pickers.",
-        "operationId": "getWorkflowVars",
+        "summary": "List variables for a graph",
+        "description": "Returns variables available in the graph, optionally scoped to a single node. Used by editors to build variable pickers.",
+        "operationId": "getGraphVars",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WorkflowVarsRequest"
+                "$ref": "#/components/schemas/GraphVarsRequest"
               }
             }
           }
@@ -58,7 +58,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkflowVarsResponse"
+                  "$ref": "#/components/schemas/GraphVarsResponse"
                 }
               }
             }
@@ -66,7 +66,7 @@
         }
       }
     },
-    "/api/v1/workflows/edges/inspect": {
+    "/api/v1/graphs/edges/inspect": {
       "post": {
         "tags": ["introspection"],
         "summary": "Inspect a connection between two nodes",
@@ -99,16 +99,16 @@
   },
   "components": {
     "schemas": {
-      "Workflow": {
-        "$ref": "./engine_dsl.schema.json#/$defs/Workflow"
+      "Graph": {
+        "$ref": "./engine_dsl.schema.json#/$defs/Graph"
       },
-      "CompileWorkflowRequest": {
+      "CompileGraphRequest": {
         "type": "object",
-        "description": "Request to compile an engine-level workflow into an executable graph.",
-        "required": ["workflow"],
+        "description": "Request to compile an engine-level graph definition into an executable runtime graph.",
+        "required": ["graph"],
         "properties": {
-          "workflow": {
-            "$ref": "#/components/schemas/Workflow"
+          "graph": {
+            "$ref": "#/components/schemas/Graph"
           },
           "options": {
             "type": "object",
@@ -118,9 +118,9 @@
         },
         "additionalProperties": false
       },
-      "CompileWorkflowResponse": {
+      "CompileGraphResponse": {
         "type": "object",
-        "description": "Result of compiling a workflow.",
+        "description": "Result of compiling a graph definition.",
         "required": ["success"],
         "properties": {
           "success": {
@@ -152,7 +152,7 @@
               },
               "end_node_ids": {
                 "type": "array",
-                "description": "IDs of nodes that can terminate the workflow.",
+                "description": "IDs of nodes that can terminate the graph.",
                 "items": {
                   "type": "string"
                 }
@@ -189,13 +189,13 @@
         },
         "additionalProperties": false
       },
-      "WorkflowVarsRequest": {
+      "GraphVarsRequest": {
         "type": "object",
         "description": "Request to list variables available when editing a specific node.",
-        "required": ["workflow", "node_id"],
+        "required": ["graph", "node_id"],
         "properties": {
-          "workflow": {
-            "$ref": "#/components/schemas/Workflow"
+          "graph": {
+            "$ref": "#/components/schemas/Graph"
           },
           "node_id": {
             "type": "string",
@@ -204,13 +204,13 @@
         },
         "additionalProperties": false
       },
-      "WorkflowVarsResponse": {
+      "GraphVarsResponse": {
         "type": "object",
         "description": "Response containing grouped variables for the requested node context.",
         "properties": {
           "groups": {
             "type": "array",
-            "description": "Variable groups such as previous node outputs, State, Workflow input.",
+            "description": "Variable groups such as previous node outputs, State, Graph input.",
             "items": {
               "$ref": "#/components/schemas/VariableGroup"
             }
@@ -220,34 +220,34 @@
       },
       "VariableGroup": {
         "type": "object",
-        "description": "Logical group of variables in the picker (e.g., a previous node, State, Workflow input).",
+        "description": "Logical group of variables in the picker (e.g., a previous node, State, Graph input).",
         "required": ["type", "id", "vars"],
         "properties": {
           "type": {
             "type": "string",
             "description": "Group type used for consistent ordering and display in editors.",
-            "enum": ["node_output", "state", "workflow_input"]
+            "enum": ["node_output", "state", "graph_input"]
           },
           "id": {
             "type": "string",
-            "description": "Group identifier. For node_output this is the node ID; for state/workflow_input this can be a fixed value such as \"state\" or \"workflow_input\"."
+            "description": "Group identifier. For node_output this is the node ID; for state/graph_input this can be a fixed value such as \"state\" or \"graph_input\"."
           },
           "title": {
             "type": "string",
-            "description": "Human-readable group title shown in the UI (e.g., \"Agent2\", \"State\", \"Workflow input\")."
+            "description": "Human-readable group title shown in the UI (e.g., \"Agent2\", \"State\", \"Graph input\")."
           },
           "vars": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/WorkflowVar"
+              "$ref": "#/components/schemas/GraphVar"
             }
           }
         },
         "additionalProperties": false
       },
-      "WorkflowVar": {
+      "GraphVar": {
         "type": "object",
-        "description": "Single variable available in a workflow context.",
+        "description": "Single variable available in a graph context.",
         "required": ["variable"],
         "properties": {
           "variable": {
@@ -256,7 +256,7 @@
           },
           "origin": {
             "type": "string",
-            "description": "Optional origin hint (e.g., \"state\", \"node_output\", \"workflow_input\")."
+            "description": "Optional origin hint (e.g., \"state\", \"node_output\", \"graph_input\")."
           },
           "kind": {
             "type": "string",
@@ -274,10 +274,10 @@
       "EdgeInspectionRequest": {
         "type": "object",
         "description": "Request to inspect a connection (edge) between two nodes.",
-        "required": ["workflow", "edge"],
+        "required": ["graph", "edge"],
         "properties": {
-          "workflow": {
-            "$ref": "#/components/schemas/Workflow"
+          "graph": {
+            "$ref": "#/components/schemas/Graph"
           },
           "edge": {
             "type": "object",

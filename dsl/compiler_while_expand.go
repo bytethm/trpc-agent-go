@@ -4,32 +4,32 @@ import (
 	"fmt"
 )
 
-// expandWhile flattens builtin.while nodes in the given workflow into regular
-// nodes and edges, while computing the metadata needed to add conditional
-// back-edges in the StateGraph. The returned workflow does not contain any
-// builtin.while nodes; instead, their body nodes are merged into the top
-// level.
-func (c *Compiler) expandWhile(workflow *Workflow) (*Workflow, map[string]*whileExpansion, error) {
-	if workflow == nil {
-		return nil, nil, fmt.Errorf("workflow is nil")
+// expandWhile flattens builtin.while nodes in the given graph definition into
+// regular nodes and edges, while computing the metadata needed to add
+// conditional back-edges in the StateGraph. The returned graph does not
+// contain any builtin.while nodes; instead, their body nodes are merged into
+// the top level.
+func (c *Compiler) expandWhile(graphDef *Graph) (*Graph, map[string]*whileExpansion, error) {
+	if graphDef == nil {
+		return nil, nil, fmt.Errorf("graph is nil")
 	}
 
 	// Build an index of existing node IDs so that while bodies can be checked
 	// for ID conflicts.
-	nodeIDs := make(map[string]bool, len(workflow.Nodes))
-	for _, n := range workflow.Nodes {
+	nodeIDs := make(map[string]bool, len(graphDef.Nodes))
+	for _, n := range graphDef.Nodes {
 		nodeIDs[n.ID] = true
 	}
 
 	whileMeta := make(map[string]*whileExpansion)
 
 	// Preprocess all builtin.while nodes and build their expansions.
-	for _, n := range workflow.Nodes {
+	for _, n := range graphDef.Nodes {
 		if n.EngineNode.NodeType != "builtin.while" {
 			continue
 		}
 
-		exp, err := c.buildWhileExpansion(n, workflow.Edges, nodeIDs)
+		exp, err := c.buildWhileExpansion(n, graphDef.Edges, nodeIDs)
 		if err != nil {
 			return nil, nil, fmt.Errorf("while node %s: %w", n.ID, err)
 		}
@@ -42,24 +42,24 @@ func (c *Compiler) expandWhile(workflow *Workflow) (*Workflow, map[string]*while
 		}
 	}
 
-	// If there are no while nodes, we can return the original workflow as-is.
+	// If there are no while nodes, we can return the original graph as-is.
 	if len(whileMeta) == 0 {
-		return workflow, whileMeta, nil
+		return graphDef, whileMeta, nil
 	}
 
-	// Build the expanded workflow: shallow-copy workflow-level metadata and
+	// Build the expanded graph: shallow-copy graph-level metadata and
 	// conditional edges, but replace Nodes/Edges with the flattened view.
-	expanded := *workflow
+	expanded := *graphDef
 	expanded.Nodes = nil
 	expanded.Edges = nil
 	// Make a shallow copy of conditional edges slice so we can append body
-	// edges without mutating the original workflow.
-	if len(workflow.ConditionalEdges) > 0 {
-		expanded.ConditionalEdges = append([]ConditionalEdge(nil), workflow.ConditionalEdges...)
+	// edges without mutating the original graph definition.
+	if len(graphDef.ConditionalEdges) > 0 {
+		expanded.ConditionalEdges = append([]ConditionalEdge(nil), graphDef.ConditionalEdges...)
 	}
 
 	// First, copy all non-while nodes.
-	for _, n := range workflow.Nodes {
+	for _, n := range graphDef.Nodes {
 		if n.EngineNode.NodeType == "builtin.while" {
 			continue
 		}
@@ -74,7 +74,7 @@ func (c *Compiler) expandWhile(workflow *Workflow) (*Workflow, map[string]*while
 	//   - edge targeting while node -> edge to body entry
 	//   - edge originating from while node -> omitted (replaced by cond edge)
 	//   - all other edges are kept as-is
-	for _, e := range workflow.Edges {
+	for _, e := range graphDef.Edges {
 		if exp, ok := whileMeta[e.Target]; ok {
 			newEdge := e
 			newEdge.Target = exp.BodyEntry

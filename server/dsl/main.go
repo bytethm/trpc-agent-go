@@ -2,9 +2,9 @@
 //
 // This server provides REST APIs for:
 // - Component/Model/Tool registry queries
-// - Workflow CRUD operations
+// - Graph CRUD operations
 // - DSL validation and compilation
-// - Workflow execution (streaming and non-streaming)
+// - Graph execution (streaming and non-streaming)
 package main
 
 import (
@@ -84,8 +84,8 @@ type Server struct {
 	toolSetRegistry   *registry.ToolSetRegistry
 	compiler          *dsl.Compiler
 
-	// TODO: Add workflow storage (database/in-memory)
-	// workflowStore WorkflowStore
+	// TODO: Add graph storage (database/in-memory)
+	// graphStore GraphStore
 
 	// TODO: Add execution manager
 	// executionManager *ExecutionManager
@@ -136,42 +136,42 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// ToolSet registry
 	mux.HandleFunc("/api/v1/toolsets", methodHandler("GET", s.handleListToolSets))
 
-	// Workflow CRUD
-	mux.HandleFunc("/api/v1/workflows", func(w http.ResponseWriter, r *http.Request) {
+	// Graph CRUD
+	mux.HandleFunc("/api/v1/graphs", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			s.handleListWorkflows(w, r)
+			s.handleListGraphs(w, r)
 		case "POST":
-			s.handleCreateWorkflow(w, r)
+			s.handleCreateGraph(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
-	mux.HandleFunc("/api/v1/workflows/{id}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/graphs/{id}", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			s.handleGetWorkflow(w, r)
+			s.handleGetGraph(w, r)
 		case "PUT":
-			s.handleUpdateWorkflow(w, r)
+			s.handleUpdateGraph(w, r)
 		case "DELETE":
-			s.handleDeleteWorkflow(w, r)
+			s.handleDeleteGraph(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
 
 	// Validation and compilation
-	mux.HandleFunc("/api/v1/workflows/validate", methodHandler("POST", s.handleValidateWorkflow))
-	mux.HandleFunc("/api/v1/workflows/{id}/compile", methodHandler("POST", s.handleCompileWorkflow))
-	mux.HandleFunc("/api/v1/workflows/schema", methodHandler("POST", s.handleWorkflowSchema))
+	mux.HandleFunc("/api/v1/graphs/validate", methodHandler("POST", s.handleValidateGraph))
+	mux.HandleFunc("/api/v1/graphs/{id}/compile", methodHandler("POST", s.handleCompileGraph))
+	mux.HandleFunc("/api/v1/graphs/schema", methodHandler("POST", s.handleGraphSchema))
 	// Per-node variable view for editors (for variable pickers / templating)
-	mux.HandleFunc("/api/v1/workflows/vars", methodHandler("POST", s.handleWorkflowVars))
+	mux.HandleFunc("/api/v1/graphs/vars", methodHandler("POST", s.handleGraphVars))
 	// Single-node variable view for editors (current node only)
-	mux.HandleFunc("/api/v1/workflows/vars/node", methodHandler("POST", s.handleWorkflowNodeVars))
+	mux.HandleFunc("/api/v1/graphs/vars/node", methodHandler("POST", s.handleGraphNodeVars))
 
 	// Execution
-	mux.HandleFunc("/api/v1/workflows/{id}/execute", methodHandler("POST", s.handleExecuteWorkflow))
-	mux.HandleFunc("/api/v1/workflows/{id}/execute/stream", methodHandler("POST", s.handleExecuteWorkflowStream))
+	mux.HandleFunc("/api/v1/graphs/{id}/execute", methodHandler("POST", s.handleExecuteGraph))
+	mux.HandleFunc("/api/v1/graphs/{id}/execute/stream", methodHandler("POST", s.handleExecuteGraphStream))
 
 	// Health check
 	mux.HandleFunc("/health", methodHandler("GET", s.handleHealth))

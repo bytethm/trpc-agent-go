@@ -25,7 +25,7 @@ import (
 	"trpc.group/trpc-go/trpc-agent-go/tool/mcp"
 )
 
-// Compiler compiles DSL workflows into executable StateGraphs.
+// Compiler compiles DSL graphs into executable StateGraphs.
 // This is the core of the DSL system, transforming declarative JSON
 // into imperative Go code that can be executed by trpc-agent-go.
 type Compiler struct {
@@ -39,7 +39,7 @@ type Compiler struct {
 }
 
 // whileBodyConfig describes the nested subgraph that forms the body of a
-// builtin.while node. It mirrors a minimal Workflow shape (nodes/edges +
+// builtin.while node. It mirrors a minimal Graph shape (nodes/edges +
 // start/exit) but is scoped locally to the while node.
 type whileBodyConfig struct {
 	Nodes            []Node            `json:"nodes"`
@@ -137,22 +137,22 @@ func (c *Compiler) AgentRegistry() *registry.AgentRegistry {
 	return c.agentRegistry
 }
 
-// Compile compiles an engine-level workflow into an executable StateGraph.
-// The workflow here is the engine DSL representation without any UI-specific
+// Compile compiles an engine-level graph definition into an executable StateGraph.
+// The graph here is the engine DSL representation without any UI-specific
 // concepts such as positions or visual layout.
-func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
-	if workflow == nil {
-		return nil, fmt.Errorf("workflow is nil")
+func (c *Compiler) Compile(graphDef *Graph) (*graph.Graph, error) {
+	if graphDef == nil {
+		return nil, fmt.Errorf("graph is nil")
 	}
 
 	// Step 0: Expand structural builtin.while nodes. While is represented as
 	// a nested subgraph in the engine DSL but compiled into a flat set of
 	// nodes/edges plus a conditional back-edge in the underlying StateGraph.
-	expandedWorkflow, whileMeta, err := c.expandWhile(workflow)
+	expandedGraph, whileMeta, err := c.expandWhile(graphDef)
 	if err != nil {
 		return nil, fmt.Errorf("while expansion failed: %w", err)
 	}
-	workflow = expandedWorkflow
+	graphDef = expandedGraph
 
 	// Detect builtin.start / builtin.end nodes (if present) so we can map
 	// them to the real graph entry/finish points. There should be at most
@@ -160,7 +160,7 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 	var startNodeID string
 	var endNodeIDs []string
 
-	for _, node := range workflow.Nodes {
+	for _, node := range graphDef.Nodes {
 		switch node.EngineNode.NodeType {
 		case "builtin.start":
 			startNodeID = node.ID
@@ -170,7 +170,7 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 	}
 
 	// Step 1: Infer State Schema from components
-	schema, err := c.schemaInference.InferSchema(workflow)
+	schema, err := c.schemaInference.InferSchema(graphDef)
 	if err != nil {
 		return nil, fmt.Errorf("schema inference failed: %w", err)
 	}
@@ -179,7 +179,7 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 	stateGraph := graph.NewStateGraph(schema)
 
 	// Step 3: Add all nodes
-	for _, node := range workflow.Nodes {
+	for _, node := range graphDef.Nodes {
 		// builtin.start is a structural DSL node and does not correspond to a
 		// real executable node in the StateGraph. The actual entry point is
 		// derived from its outgoing edge.
@@ -196,7 +196,7 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 	}
 
 	// Step 4: Add edges
-	for _, edge := range workflow.Edges {
+	for _, edge := range graphDef.Edges {
 		// Skip edges originating from the builtin.start node; they are only
 		// used to determine the real graph entry point and are not needed in
 		// the executable graph.
@@ -215,7 +215,7 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 	}
 
 	// Step 5: Add conditional edges
-	for _, condEdge := range workflow.ConditionalEdges {
+	for _, condEdge := range graphDef.ConditionalEdges {
 		// Handle regular conditional edges
 		condFunc, err := c.createConditionalFunc(condEdge)
 		if err != nil {
@@ -265,13 +265,13 @@ func (c *Compiler) Compile(workflow *Workflow) (*graph.Graph, error) {
 
 	// Step 6: Set entry point
 	if startNodeID != "" {
-		firstNodeID, err := resolveStartSuccessor(startNodeID, workflow.Edges)
+		firstNodeID, err := resolveStartSuccessor(startNodeID, graphDef.Edges)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve start node successor: %w", err)
 		}
 		stateGraph.SetEntryPoint(firstNodeID)
 	} else {
-		stateGraph.SetEntryPoint(workflow.StartNodeID)
+		stateGraph.SetEntryPoint(graphDef.StartNodeID)
 	}
 
 	// Step 7: Set finish points based on builtin.end nodes (if any). Each
@@ -333,7 +333,7 @@ func (c *Compiler) buildWhileExpansion(node Node, edges []Edge, nodeIDs map[stri
 			return nil, fmt.Errorf("duplicate node id %q in while body", n.ID)
 		}
 		if nodeIDs[n.ID] {
-			return nil, fmt.Errorf("while body node id %q conflicts with existing workflow node", n.ID)
+			return nil, fmt.Errorf("while body node id %q conflicts with existing graph node", n.ID)
 		}
 		bodyNodeIDs[n.ID] = true
 	}

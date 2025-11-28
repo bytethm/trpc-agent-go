@@ -52,31 +52,31 @@ func runInteractive() error {
 	modelRegistry.MustRegister(modelName, modelClient)
 	fmt.Printf("✅ Model registered: %s\n", modelName)
 
-	// Load workflow
+	// Load graph definition
 	data, err := os.ReadFile("workflow.json")
 	if err != nil {
 		return fmt.Errorf("failed to read workflow.json: %w", err)
 	}
-	var wf dsl.Workflow
-	if err := json.Unmarshal(data, &wf); err != nil {
+	var graphDef dsl.Graph
+	if err := json.Unmarshal(data, &graphDef); err != nil {
 		return fmt.Errorf("failed to parse workflow.json: %w", err)
 	}
-	fmt.Printf("✅ Workflow loaded: %s\n", wf.Name)
+	fmt.Printf("✅ Graph loaded: %s\n", graphDef.Name)
 
 	// Compile
 	compiler := dsl.NewCompiler(registry.DefaultRegistry).
 		WithModelRegistry(modelRegistry)
 
-	graphCompiled, err := compiler.Compile(&wf)
+	graphCompiled, err := compiler.Compile(&graphDef)
 	if err != nil {
-		return fmt.Errorf("failed to compile workflow: %w", err)
+		return fmt.Errorf("failed to compile graph: %w", err)
 	}
-	fmt.Println("✅ Workflow compiled successfully")
+	fmt.Println("✅ Graph compiled successfully")
 
 	// Checkpoint saver & agent with checkpoint support.
 	saver := checkpointinmemory.NewSaver()
 	ga, err := graphagent.New("openai-custom-service", graphCompiled,
-		graphagent.WithDescription("Custom service workflow with user approval (builtin.user_approval)"),
+		graphagent.WithDescription("Custom service graph with user approval (builtin.user_approval)"),
 		graphagent.WithCheckpointSaver(saver),
 	)
 	if err != nil {
@@ -89,13 +89,13 @@ func runInteractive() error {
 	}
 
 	sessSvc := inmemory.NewSessionService()
-	r := runner.NewRunner("openai-custom-service-workflow", ga, runner.WithSessionService(sessSvc))
+	r := runner.NewRunner("openai-custom-service-graph", ga, runner.WithSessionService(sessSvc))
 	defer r.Close()
 
 	fmt.Println()
-	fmt.Println("🚀 Customer Service DSL Example (with user approval)")
+	fmt.Println("🚀 Customer Service DSL Graph Example (with user approval)")
 	fmt.Println("Commands:")
-	fmt.Println("  run [text]    - run workflow until first interrupt (optional custom customer message)")
+	fmt.Println("  run [text]    - run graph until first interrupt (optional custom customer message)")
 	fmt.Println("  resume <ans>  - resume with approval decision (approve/reject)")
 	fmt.Println("  quit          - exit")
 	fmt.Println()
@@ -142,7 +142,7 @@ func runInteractive() error {
 
 		case "resume":
 			if lineageID == "" {
-				fmt.Println("⚠️  No lineage to resume. Run the workflow first.")
+				fmt.Println("⚠️  No lineage to resume. Run the graph first.")
 				continue
 			}
 			if len(parts) < 2 {
@@ -162,7 +162,7 @@ func runInteractive() error {
 	return reader.Err()
 }
 
-// runOnce executes the workflow until completion or first interrupt.
+// runOnce executes the graph until completion or first interrupt.
 func runOnce(
 	ctx context.Context,
 	r runner.Runner,
@@ -178,7 +178,7 @@ func runOnce(
 
 	events, err := r.Run(ctx, userID, sessionID, msg, agent.WithRuntimeState(runtimeState))
 	if err != nil {
-		return fmt.Errorf("failed to run workflow: %w", err)
+		return fmt.Errorf("failed to run graph: %w", err)
 	}
 
 	var lastResponse string

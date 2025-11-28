@@ -13,7 +13,7 @@ import (
 )
 
 // Registry manages component registration and lookup.
-// It provides a central place to register and retrieve components for DSL workflows.
+// It provides a central place to register and retrieve components for DSL graphs.
 //
 // Components can be registered in two ways:
 // 1. Framework built-in components (registered at init time)

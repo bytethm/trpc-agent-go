@@ -16,7 +16,7 @@ import (
 // AgentRegistry is a registry for managing sub-agents.
 // It allows registering agents by name and looking them up later.
 //
-// This is used in multi-agent workflows where one agent can delegate
+// This is used in multi-agent graphs where one agent can delegate
 // to another agent as a sub-node in the graph.
 //
 // Example usage:
@@ -99,4 +99,3 @@ func (r *AgentRegistry) Clear() {
 func (r *AgentRegistry) Count() int {
 	return len(r.agents)
 }
-

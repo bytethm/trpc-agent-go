@@ -17,7 +17,7 @@ import (
 // ModelRegistry manages LLM model instances.
 // Models are registered at application startup and referenced by name in DSL.
 // This follows the pattern used by Flowise and Langflow where models are
-// components that can be configured and reused across the workflow.
+// components that can be configured and reused across the graph.
 type ModelRegistry struct {
 	mu     sync.RWMutex
 	models map[string]model.Model

@@ -1,7 +1,7 @@
 {
     "version": "1.0",
     "name": "vars_demo",
-    "description": "Minimal workflow for /vars testing",
+    "description": "Minimal graph for /vars testing",
     "nodes": [
       {
         "id": "agent",

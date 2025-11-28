@@ -14,7 +14,7 @@ import (
 	"os"
 )
 
-// Parser parses JSON DSL into Workflow structures.
+// Parser parses JSON DSL into Graph structures.
 type Parser struct {
 	// Strict mode enables strict JSON parsing (disallow unknown fields)
 	Strict bool
@@ -34,38 +34,38 @@ func NewStrictParser() *Parser {
 	}
 }
 
-// Parse parses a JSON byte array into a Workflow.
-func (p *Parser) Parse(data []byte) (*Workflow, error) {
-	var workflow Workflow
+// Parse parses a JSON byte array into a Graph.
+func (p *Parser) Parse(data []byte) (*Graph, error) {
+	var graphDef Graph
 
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	if p.Strict {
 		decoder.DisallowUnknownFields()
 	}
 
-	if err := decoder.Decode(&workflow); err != nil {
+	if err := decoder.Decode(&graphDef); err != nil {
 		return nil, fmt.Errorf("failed to parse DSL: %w", err)
 	}
 
 	// Auto-generate edge IDs if not provided
-	for i := range workflow.Edges {
-		if workflow.Edges[i].ID == "" {
-			workflow.Edges[i].ID = fmt.Sprintf("edge_%d", i)
+	for i := range graphDef.Edges {
+		if graphDef.Edges[i].ID == "" {
+			graphDef.Edges[i].ID = fmt.Sprintf("edge_%d", i)
 		}
 	}
 
 	// Auto-generate conditional edge IDs if not provided
-	for i := range workflow.ConditionalEdges {
-		if workflow.ConditionalEdges[i].ID == "" {
-			workflow.ConditionalEdges[i].ID = fmt.Sprintf("cond_edge_%d", i)
+	for i := range graphDef.ConditionalEdges {
+		if graphDef.ConditionalEdges[i].ID == "" {
+			graphDef.ConditionalEdges[i].ID = fmt.Sprintf("cond_edge_%d", i)
 		}
 	}
 
-	return &workflow, nil
+	return &graphDef, nil
 }
 
-// ParseFile parses a JSON file into a Workflow.
-func (p *Parser) ParseFile(filename string) (*Workflow, error) {
+// ParseFile parses a JSON file into a Graph.
+func (p *Parser) ParseFile(filename string) (*Graph, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file %s: %w", filename, err)
@@ -73,30 +73,30 @@ func (p *Parser) ParseFile(filename string) (*Workflow, error) {
 	return p.Parse(data)
 }
 
-// ParseString parses a JSON string into a Workflow.
-func (p *Parser) ParseString(jsonStr string) (*Workflow, error) {
+// ParseString parses a JSON string into a Graph.
+func (p *Parser) ParseString(jsonStr string) (*Graph, error) {
 	return p.Parse([]byte(jsonStr))
 }
 
-// ToJSON serializes a Workflow to JSON.
-func ToJSON(workflow *Workflow) ([]byte, error) {
-	return json.MarshalIndent(workflow, "", "  ")
+// ToJSON serializes a Graph to JSON.
+func ToJSON(graphDef *Graph) ([]byte, error) {
+	return json.MarshalIndent(graphDef, "", "  ")
 }
 
-// ToJSONString serializes a Workflow to a JSON string.
-func ToJSONString(workflow *Workflow) (string, error) {
-	data, err := ToJSON(workflow)
+// ToJSONString serializes a Graph to a JSON string.
+func ToJSONString(graphDef *Graph) (string, error) {
+	data, err := ToJSON(graphDef)
 	if err != nil {
 		return "", err
 	}
 	return string(data), nil
 }
 
-// WriteToFile writes a Workflow to a JSON file.
-func WriteToFile(workflow *Workflow, filename string) error {
-	data, err := ToJSON(workflow)
+// WriteToFile writes a Graph to a JSON file.
+func WriteToFile(graphDef *Graph, filename string) error {
+	data, err := ToJSON(graphDef)
 	if err != nil {
-		return fmt.Errorf("failed to serialize workflow: %w", err)
+		return fmt.Errorf("failed to serialize graph: %w", err)
 	}
 
 	if err := os.WriteFile(filename, data, 0644); err != nil {
