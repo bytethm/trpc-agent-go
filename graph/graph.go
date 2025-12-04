@@ -200,9 +200,17 @@ type Graph struct {
 	edges            map[string][]*Edge
 	conditionalEdges map[string]*ConditionalEdge
 	entryPoint       string
-	// Pregel-style extensions
+	// Pregel-style extensions.
+	// channelManager is used as a static registry for channel *definitions*
+	// (name + behavior) that are derived at compile time when building the
+	// graph. At runtime, each execution creates its own per-execution channel
+	// manager inside ExecutionContext so that channel values and versions are
+	// never shared across concurrent runs.
 	channelManager *channel.Manager
-	triggerToNodes map[string][]string // Maps channel names to nodes that are triggered
+	// triggerToNodes maps channel names to nodes that are triggered.
+	// This mapping is immutable after graph construction and copied into
+	// ExecutionContext for each run.
+	triggerToNodes map[string][]string
 
 	// Caching
 	cache       Cache
@@ -368,6 +376,16 @@ type ExecutionContext struct {
 	EventChan    chan<- *event.Event
 	InvocationID string
 
+	// channels holds the per-execution Pregel channels. These are constructed
+	// from the Graph's static channel definitions when the execution starts
+	// and are never shared across concurrent runs.
+	channels *channel.Manager
+	// triggerToNodes is a per-execution copy of the Graph's trigger mapping
+	// that may be extended with dynamic triggers (e.g., from conditional
+	// edges) during execution. Protected by triggerMu.
+	triggerToNodes map[string][]string
+	triggerMu      sync.RWMutex
+
 	// stateMutex protects State reads/writes.
 	stateMutex sync.RWMutex
 	State      State
@@ -485,12 +503,21 @@ func (g *Graph) addChannel(name string, channelType channel.Behavior) {
 	g.channelManager.AddChannel(name, channelType)
 }
 
-// getChannel retrieves a channel by name.
+// getChannelDefinitions returns the static channel definitions registered on
+// the graph. Callers must treat the returned channels as read-only templates
+// (behavior only) and create per-execution copies before mutating state.
+func (g *Graph) getChannelDefinitions() map[string]*channel.Channel {
+	return g.channelManager.GetAllChannels()
+}
+
+// getChannel retrieves a channel definition by name. This is primarily used
+// in tests and checkpoint utilities; runtime execution should operate on the
+// per-execution channels stored in ExecutionContext.
 func (g *Graph) getChannel(name string) (*channel.Channel, bool) {
 	return g.channelManager.GetChannel(name)
 }
 
-// getAllChannels returns all channels in the graph.
+// getAllChannels returns all channel definitions in the graph.
 func (g *Graph) getAllChannels() map[string]*channel.Channel {
 	return g.channelManager.GetAllChannels()
 }
