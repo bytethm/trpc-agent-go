@@ -303,13 +303,18 @@ func (at *Tool) appendEvent(
 	}
 	ok, err := appender.Invoke(ctx, inv, evt)
 	if ok {
+		// Some appenders persist events without updating the in-memory session
+		// snapshot. When running a sub-agent directly (without Runner), the
+		// agent's next LLM turn still needs to see its own tool call/result
+		// events in inv.Session. Ensure the local session reflects the event
+		// even when append succeeds.
 		if err != nil {
 			log.Errorf(
 				"AgentTool: session append failed: %v", err,
 			)
-			if evt.ID == "" || !sessionHasEventID(inv, evt.ID) {
-				inv.Session.UpdateUserSession(evt)
-			}
+		}
+		if evt.ID == "" || !sessionHasEventID(inv, evt.ID) {
+			inv.Session.UpdateUserSession(evt)
 		}
 		return
 	}

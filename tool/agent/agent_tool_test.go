@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"trpc.group/trpc-go/trpc-agent-go/agent"
+	llmagent "trpc.group/trpc-go/trpc-agent-go/agent/llmagent"
 	"trpc.group/trpc-go/trpc-agent-go/event"
 	"trpc.group/trpc-go/trpc-agent-go/graph"
 	"trpc.group/trpc-go/trpc-agent-go/internal/state/appender"
@@ -469,6 +470,109 @@ func TestTool_Call_UsesSessionAppender(t *testing.T) {
 	require.NotEmpty(t, sa.inv)
 	require.Greater(t, appendCount, 0)
 	require.True(t, sessionHasToolResult(sess, sa.inv, "tool-call-1"))
+}
+
+type toolLoopModel struct {
+	callCount int
+}
+
+func (m *toolLoopModel) GenerateContent(
+	ctx context.Context,
+	req *model.Request,
+) (<-chan *model.Response, error) {
+	m.callCount++
+
+	hasToolResult := false
+	for _, msg := range req.Messages {
+		if msg.Role == model.RoleTool && msg.ToolID == "call_1" {
+			hasToolResult = true
+			break
+		}
+	}
+
+	var rsp *model.Response
+	if hasToolResult {
+		rsp = &model.Response{
+			Done:    true,
+			Model:   m.Info().Name,
+			Created: time.Now().Unix(),
+			Choices: []model.Choice{{Message: model.NewAssistantMessage("final")}},
+		}
+	} else {
+		rsp = &model.Response{
+			Done:    false,
+			Model:   m.Info().Name,
+			Created: time.Now().Unix(),
+			Choices: []model.Choice{{Message: model.Message{
+				Role:    model.RoleAssistant,
+				Content: "",
+				ToolCalls: []model.ToolCall{{
+					Type: "function",
+					ID:   "call_1",
+					Function: model.FunctionDefinitionParam{
+						Name:      "dummy_tool",
+						Arguments: []byte(`{"q":"x"}`),
+					},
+				}},
+			}}},
+		}
+	}
+
+	out := make(chan *model.Response, 1)
+	out <- rsp
+	close(out)
+	return out, nil
+}
+
+func (m *toolLoopModel) Info() model.Info { return model.Info{Name: "tool-loop-model"} }
+
+type dummyTool struct{}
+
+func (t *dummyTool) Call(ctx context.Context, jsonArgs []byte) (any, error) {
+	return "tool_result", nil
+}
+
+func (t *dummyTool) Declaration() *tool.Declaration {
+	return &tool.Declaration{
+		Name: "dummy_tool",
+		InputSchema: &tool.Schema{
+			Type: "object",
+		},
+		OutputSchema: &tool.Schema{
+			Type: "string",
+		},
+	}
+}
+
+func TestTool_Call_AppenderNoSessionUpdate_SubagentToolLoopCompletes(t *testing.T) {
+	mock := &toolLoopModel{}
+	sa := llmagent.New(
+		"sub-agent",
+		llmagent.WithModel(mock),
+		llmagent.WithTools([]tool.Tool{&dummyTool{}}),
+		llmagent.WithGenerationConfig(model.GenerationConfig{Stream: false}),
+		llmagent.WithMaxToolIterations(1),
+	)
+	at := NewTool(sa, WithHistoryScope(HistoryScopeIsolated))
+
+	sess := session.NewSession("app", "user", "session")
+	parent := agent.NewInvocation(
+		agent.WithInvocationSession(sess),
+		agent.WithInvocationEventFilterKey("parent-agent"),
+	)
+
+	appender.Attach(parent, func(ctx context.Context, evt *event.Event) error {
+		return nil
+	})
+
+	ctx := agent.NewInvocationContext(context.Background(), parent)
+	got, err := at.Call(ctx, []byte(`{"request":"hi"}`))
+	require.NoError(t, err)
+
+	s, ok := got.(string)
+	require.True(t, ok)
+	require.Equal(t, "final", s)
+	require.Equal(t, 2, mock.callCount)
 }
 
 func TestTool_Call_AppenderError_NoDuplicateEvents(t *testing.T) {
