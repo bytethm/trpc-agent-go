@@ -599,11 +599,7 @@ func convertTools(tools map[string]tool.Tool) []*hunyuan.ChatCompletionMessageTo
 	for _, tl := range tools {
 		decl := tl.Declaration()
 
-		schemaBytes, err := json.Marshal(decl.InputSchema)
-		if err != nil {
-			log.Errorf("failed to marshal tool schema for %s: %v", decl.Name, err)
-			continue
-		}
+		schemaBytes := normalizeToolSchemaBytes(decl.Name, decl.InputSchema)
 
 		result = append(result, &hunyuan.ChatCompletionMessageTool{
 			Type: functionToolType,
@@ -615,6 +611,44 @@ func convertTools(tools map[string]tool.Tool) []*hunyuan.ChatCompletionMessageTo
 		})
 	}
 	return result
+}
+
+func normalizeToolSchemaBytes(toolName string, schema *tool.Schema) []byte {
+	emptyObject := map[string]any{"type": "object", "properties": map[string]any{}}
+	if schema == nil {
+		b, _ := json.Marshal(emptyObject)
+		return b
+	}
+	schemaBytes, err := json.Marshal(schema)
+	if err != nil {
+		log.Errorf("failed to marshal tool schema for %s: %v", toolName, err)
+		b, _ := json.Marshal(emptyObject)
+		return b
+	}
+	var out map[string]any
+	if err := json.Unmarshal(schemaBytes, &out); err != nil {
+		log.Errorf("failed to unmarshal tool schema for %s: %v", toolName, err)
+		b, _ := json.Marshal(emptyObject)
+		return b
+	}
+	if out == nil {
+		b, _ := json.Marshal(emptyObject)
+		return b
+	}
+	// Some OpenAI-compatible proxies require object schemas to include a `properties` key,
+	// even when the tool takes no arguments.
+	if typ, ok := out["type"].(string); ok && typ == "object" {
+		if props, exists := out["properties"]; !exists || props == nil {
+			out["properties"] = map[string]any{}
+		}
+	}
+	normalized, err := json.Marshal(out)
+	if err != nil {
+		log.Errorf("failed to marshal normalized tool schema for %s: %v", toolName, err)
+		b, _ := json.Marshal(emptyObject)
+		return b
+	}
+	return normalized
 }
 
 // buildToolDescription builds the description for a tool.
