@@ -22,6 +22,7 @@ import (
 	"trpc.group/trpc-go/trpc-agent-go/model"
 	imodel "trpc.group/trpc-go/trpc-agent-go/model/internal/model"
 	"trpc.group/trpc-go/trpc-agent-go/tool"
+	schemautil "trpc.group/trpc-go/trpc-agent-go/tool/schemautil"
 )
 
 // Model implements the model.Model interface for Gemini API.
@@ -528,10 +529,34 @@ func (m *Model) convertTools(tools map[string]tool.Tool) []*genai.Tool {
 		if decl.InputSchema != nil {
 			// Avoid sending `"parametersJsonSchema": null` to Gemini when a tool has no input schema.
 			// `ParametersJsonSchema` is `any`, so assigning a typed nil pointer would still marshal as null.
-			funcDeclaration.ParametersJsonSchema = normalizeToolSchema(decl.Name, "input", decl.InputSchema)
+			normalized, err := schemautil.Normalize(decl.InputSchema)
+			if err != nil {
+				log.Warnf(
+					"failed to normalize input schema for tool %q: %v",
+					decl.Name,
+					err,
+				)
+				normalized = schemautil.EmptyObject()
+			}
+			if normalized == nil {
+				normalized = schemautil.EmptyObject()
+			}
+			funcDeclaration.ParametersJsonSchema = normalized
 		}
 		if decl.OutputSchema != nil {
-			funcDeclaration.ResponseJsonSchema = normalizeToolSchema(decl.Name, "output", decl.OutputSchema)
+			normalized, err := schemautil.Normalize(decl.OutputSchema)
+			if err != nil {
+				log.Warnf(
+					"failed to normalize output schema for tool %q: %v",
+					decl.Name,
+					err,
+				)
+				normalized = schemautil.EmptyObject()
+			}
+			if normalized == nil {
+				normalized = schemautil.EmptyObject()
+			}
+			funcDeclaration.ResponseJsonSchema = normalized
 		}
 		result = append(result, &genai.Tool{
 			FunctionDeclarations: []*genai.FunctionDeclaration{
@@ -540,53 +565,6 @@ func (m *Model) convertTools(tools map[string]tool.Tool) []*genai.Tool {
 		})
 	}
 	return result
-}
-
-func normalizeToolSchema(toolName, schemaKind string, schema *tool.Schema) any {
-	if schema == nil {
-		return nil
-	}
-	// Marshal/unmarshal to ensure the schema is JSON-serializable and to allow safe normalization
-	// without mutating shared schema instances.
-	schemaBytes, err := json.Marshal(schema)
-	if err != nil {
-		log.Warnf(
-			"failed to marshal %s schema for tool %q: %v",
-			schemaKind,
-			toolName,
-			err,
-		)
-		return emptyObjectSchema()
-	}
-	return normalizeToolSchemaBytes(toolName, schemaKind, schemaBytes)
-}
-
-func normalizeToolSchemaBytes(toolName, schemaKind string, schemaBytes []byte) any {
-	var out map[string]any
-	if err := json.Unmarshal(schemaBytes, &out); err != nil {
-		log.Warnf(
-			"failed to unmarshal %s schema for tool %q: %v",
-			schemaKind,
-			toolName,
-			err,
-		)
-		return emptyObjectSchema()
-	}
-	// Some function-calling implementations are strict about top-level object schemas having
-	// an explicit `properties` key, even for no-arg tools.
-	if typ, ok := out["type"].(string); ok && typ == "object" {
-		if props, exists := out["properties"]; !exists || props == nil {
-			out["properties"] = map[string]any{}
-		}
-	}
-	return out
-}
-
-func emptyObjectSchema() map[string]any {
-	return map[string]any{
-		"type":       "object",
-		"properties": map[string]any{},
-	}
 }
 
 // convertContentPart converts a single content part to Gemini format.

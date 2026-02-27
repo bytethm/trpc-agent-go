@@ -34,6 +34,7 @@ import (
 	"trpc.group/trpc-go/trpc-agent-go/model"
 	imodel "trpc.group/trpc-go/trpc-agent-go/model/internal/model"
 	"trpc.group/trpc-go/trpc-agent-go/tool"
+	schemautil "trpc.group/trpc-go/trpc-agent-go/tool/schemautil"
 )
 
 const (
@@ -841,24 +842,12 @@ func (m *Model) convertTools(tools map[string]tool.Tool) []openai.ChatCompletion
 	for _, name := range toolNames {
 		tool := tools[name]
 		declaration := tool.Declaration()
-		// Convert the InputSchema to JSON to correctly map to OpenAI's expected format
-		schemaBytes, err := json.Marshal(declaration.InputSchema)
+		parametersMap, err := schemautil.Normalize(declaration.InputSchema)
 		if err != nil {
-			log.Errorf("failed to marshal tool schema for %s: %v", declaration.Name, err)
+			log.Errorf("failed to normalize tool schema for %s: %v", declaration.Name, err)
 			continue
 		}
-		var parameters shared.FunctionParameters
-		if err := json.Unmarshal(schemaBytes, &parameters); err != nil {
-			log.Errorf("failed to unmarshal tool schema for %s: %v", declaration.Name, err)
-			continue
-		}
-		// Some OpenAI-compatible proxies require object schemas to include
-		// a `properties` key, even when the tool takes no arguments.
-		if typ, ok := parameters["type"].(string); ok && typ == "object" {
-			if props, exists := parameters["properties"]; !exists || props == nil {
-				parameters["properties"] = map[string]any{}
-			}
-		}
+		parameters := shared.FunctionParameters(parametersMap)
 		result = append(result, openai.ChatCompletionToolParam{
 			Function: openai.FunctionDefinitionParam{
 				Name:        declaration.Name,
