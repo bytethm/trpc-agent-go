@@ -25,6 +25,7 @@ import (
 	"trpc.group/trpc-go/trpc-agent-go/model/hunyuan/internal/hunyuan"
 	imodel "trpc.group/trpc-go/trpc-agent-go/model/internal/model"
 	"trpc.group/trpc-go/trpc-agent-go/tool"
+	schemautil "trpc.group/trpc-go/trpc-agent-go/tool/schemautil"
 )
 
 const (
@@ -599,9 +600,17 @@ func convertTools(tools map[string]tool.Tool) []*hunyuan.ChatCompletionMessageTo
 	for _, tl := range tools {
 		decl := tl.Declaration()
 
-		schemaBytes, err := json.Marshal(decl.InputSchema)
+		normalized, err := schemautil.Normalize(decl.InputSchema)
 		if err != nil {
-			log.Errorf("failed to marshal tool schema for %s: %v", decl.Name, err)
+			log.Errorf("failed to normalize tool schema for %s: %v", decl.Name, err)
+			continue
+		}
+		if normalized == nil {
+			normalized = schemautil.EmptyObject()
+		}
+		schemaBytes, err := json.Marshal(normalized)
+		if err != nil {
+			log.Errorf("failed to marshal normalized tool schema for %s: %v", decl.Name, err)
 			continue
 		}
 

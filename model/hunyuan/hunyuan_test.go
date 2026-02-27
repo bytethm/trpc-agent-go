@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"trpc.group/trpc-go/trpc-agent-go/model"
 	"trpc.group/trpc-go/trpc-agent-go/model/hunyuan/internal/hunyuan"
@@ -646,6 +647,64 @@ func TestBuildChatRequest(t *testing.T) {
 	if !chatReq.EnableThinking {
 		t.Error("Expected EnableThinking to be true")
 	}
+}
+
+func Test_convertTools_NilInputSchemaIsNormalized(t *testing.T) {
+	toolsMap := map[string]tool.Tool{
+		"t1": stubTool{decl: &tool.Declaration{
+			Name:        "t1",
+			Description: "desc",
+			InputSchema: nil,
+		}},
+	}
+
+	converted := convertTools(toolsMap)
+	require.Len(t, converted, 1)
+	require.NotNil(t, converted[0].Function)
+
+	var schema map[string]any
+	require.NoError(t, json.Unmarshal([]byte(converted[0].Function.Parameters), &schema))
+	require.Equal(t, "object", schema["type"])
+	require.Contains(t, schema, "properties")
+	_, ok := schema["properties"].(map[string]any)
+	require.True(t, ok)
+}
+
+func Test_convertTools_ObjectSchemaAddsEmptyProperties(t *testing.T) {
+	toolsMap := map[string]tool.Tool{
+		"t1": stubTool{decl: &tool.Declaration{
+			Name:        "t1",
+			Description: "desc",
+			InputSchema: &tool.Schema{Type: "object"},
+		}},
+	}
+
+	converted := convertTools(toolsMap)
+	require.Len(t, converted, 1)
+	require.NotNil(t, converted[0].Function)
+
+	var schema map[string]any
+	require.NoError(t, json.Unmarshal([]byte(converted[0].Function.Parameters), &schema))
+	require.Equal(t, "object", schema["type"])
+	require.Contains(t, schema, "properties")
+	_, ok := schema["properties"].(map[string]any)
+	require.True(t, ok)
+}
+
+func Test_convertTools_MarshalErrorSkipsTool(t *testing.T) {
+	toolsMap := map[string]tool.Tool{
+		"t1": stubTool{decl: &tool.Declaration{
+			Name:        "t1",
+			Description: "desc",
+			InputSchema: &tool.Schema{
+				Type:                 "object",
+				AdditionalProperties: func() {},
+			},
+		}},
+	}
+
+	converted := convertTools(toolsMap)
+	require.Empty(t, converted)
 }
 
 func TestBuildChatRequestWithMaxTokens(t *testing.T) {

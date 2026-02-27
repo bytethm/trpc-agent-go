@@ -171,6 +171,48 @@ func Test_convertTools(t *testing.T) {
 	assert.Equal(t, "t1", params[0].OfTool.Name)
 }
 
+func Test_convertTools_NormalizesNilProperties(t *testing.T) {
+	toolsMap := map[string]tool.Tool{
+		"t1": stubTool{decl: &tool.Declaration{
+			Name:        "t1",
+			Description: "desc",
+			InputSchema: &tool.Schema{Type: "object"},
+		}},
+	}
+
+	params := convertTools(toolsMap)
+	require.Len(t, params, 1)
+	require.NotNil(t, params[0].OfTool)
+
+	props, ok := params[0].OfTool.InputSchema.Properties.(map[string]*tool.Schema)
+	require.True(t, ok)
+	require.NotNil(t, props)
+	require.Empty(t, props)
+
+	body, err := json.Marshal(params[0].OfTool)
+	require.NoError(t, err)
+	require.NotContains(t, string(body), `"properties":null`)
+}
+
+func Test_convertTools_NilInputSchemaIsHandled(t *testing.T) {
+	toolsMap := map[string]tool.Tool{
+		"t1": stubTool{decl: &tool.Declaration{
+			Name:        "t1",
+			Description: "desc",
+			InputSchema: nil,
+		}},
+	}
+
+	params := convertTools(toolsMap)
+	require.Len(t, params, 1)
+	require.NotNil(t, params[0].OfTool)
+
+	body, err := json.Marshal(params[0].OfTool)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"type":"object"`)
+	require.NotContains(t, string(body), `"properties":null`)
+}
+
 func Test_buildToolDescription_AppendsOutputSchema(t *testing.T) {
 	schema := &tool.Schema{
 		Type: "object",
