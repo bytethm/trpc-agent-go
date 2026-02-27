@@ -635,8 +635,8 @@ func normalizeToolSchemaBytes(toolName string, schema *tool.Schema) []byte {
 		b, _ := json.Marshal(emptyObject)
 		return b
 	}
-	// Some OpenAI-compatible proxies require object schemas to include a `properties` key,
-	// even when the tool takes no arguments.
+	// Some function-calling implementations are strict about top-level object schemas having
+	// an explicit `properties` key, even for no-arg tools.
 	if typ, ok := out["type"].(string); ok && typ == "object" {
 		if props, exists := out["properties"]; !exists || props == nil {
 			out["properties"] = map[string]any{}
