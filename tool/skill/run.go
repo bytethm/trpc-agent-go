@@ -490,10 +490,36 @@ var _ tool.CallableTool = (*RunTool)(nil)
 func isSkillLoadedInContext(ctx context.Context, name string) bool {
 	inv, ok := agent.InvocationFromContext(ctx)
 	if !ok || inv == nil || inv.Session == nil {
+		if skill.DebugSkillStateEnabled() {
+			log.InfofContext(
+				ctx,
+				"skills-debug: skill_run gate bypass skill=%s reason=no_invocation_or_session",
+				strings.TrimSpace(name),
+			)
+		}
 		return true
 	}
 	key := skill.LoadedKey(inv.AgentName, strings.TrimSpace(name))
 	v, ok := inv.Session.GetState(key)
+	if skill.DebugSkillStateEnabled() {
+		state := inv.Session.SnapshotState()
+		log.InfofContext(
+			ctx,
+			"skills-debug: skill_run gate request_id=%s app=%s user=%s session=%s agent=%s invocation=%s skill=%s loaded_key=%s hit=%t value_len=%d loaded_skills=%v state_keys=%v",
+			strings.TrimSpace(inv.RunOptions.RequestID),
+			inv.Session.AppName,
+			inv.Session.UserID,
+			inv.Session.ID,
+			inv.AgentName,
+			inv.InvocationID,
+			strings.TrimSpace(name),
+			key,
+			ok,
+			len(v),
+			skill.DebugLoadedSkills(state, inv.AgentName),
+			skill.DebugSkillStateKeys(state),
+		)
+	}
 	return ok && len(v) > 0
 }
 

@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"trpc.group/trpc-go/trpc-agent-go/agent"
 	"trpc.group/trpc-go/trpc-agent-go/log"
@@ -122,7 +123,23 @@ func (t *LoadTool) StateDeltaForInvocation(
 	if inv != nil {
 		agentName = inv.AgentName
 	}
-	return t.stateDelta(agentName, args)
+	delta := t.stateDelta(agentName, args)
+	if skill.DebugSkillStateEnabled() && inv != nil && inv.Session != nil {
+		log.Infof(
+			"skills-debug: skill_load state_delta request_id=%s app=%s user=%s session=%s agent=%s invocation=%s skill=%s tool_call_id=%s delta_keys=%v state_keys=%v",
+			strings.TrimSpace(inv.RunOptions.RequestID),
+			inv.Session.AppName,
+			inv.Session.UserID,
+			inv.Session.ID,
+			inv.AgentName,
+			inv.InvocationID,
+			debugLoadedSkillName(args),
+			strings.TrimSpace(toolCallID),
+			skill.DebugStateDeltaKeys(delta),
+			skill.DebugSkillStateKeys(inv.Session.SnapshotState()),
+		)
+	}
+	return delta
 }
 
 func (t *LoadTool) stateDelta(
@@ -158,3 +175,11 @@ func (t *LoadTool) stateDelta(
 var _ tool.Tool = (*LoadTool)(nil)
 var _ tool.CallableTool = (*LoadTool)(nil)
 var _ stateDeltaProvider = (*LoadTool)(nil)
+
+func debugLoadedSkillName(args []byte) string {
+	var in loadInput
+	if err := json.Unmarshal(args, &in); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(in.Skill)
+}

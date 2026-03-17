@@ -209,6 +209,8 @@ func (p *SkillsRequestProcessor) ProcessRequest(
 
 	maybeMigrateLegacySkillState(ctx, inv, ch)
 
+	p.debugLogState(ctx, inv, "start")
+
 	p.maybeClearSkillStateForTurn(ctx, inv, ch)
 
 	// 1) Always inject overview (names + descriptions) into system
@@ -217,6 +219,7 @@ func (p *SkillsRequestProcessor) ProcessRequest(
 
 	loaded := p.getLoadedSkills(inv)
 	loaded = p.maybeCapLoadedSkills(ctx, inv, loaded, ch)
+	p.debugLogState(ctx, inv, "after_clear")
 
 	if p.toolResultMode {
 		// Loaded skill bodies/docs are materialized into tool results by a
@@ -486,11 +489,45 @@ func (p *SkillsRequestProcessor) maybeClearSkillStateForTurn(
 		return
 	}
 	if _, ok := inv.GetState(skillsTurnInitStateKey); ok {
+		if skill.DebugSkillStateEnabled() {
+			log.InfofContext(
+				ctx,
+				"skills-debug: turn_clear request_id=%s app=%s user=%s session=%s agent=%s invocation=%s skipped=already_initialized state_keys=%v",
+				strings.TrimSpace(inv.RunOptions.RequestID),
+				inv.Session.AppName,
+				inv.Session.UserID,
+				inv.Session.ID,
+				inv.AgentName,
+				inv.InvocationID,
+				skill.DebugSkillStateKeys(inv.Session.SnapshotState()),
+			)
+		}
 		return
 	}
 	inv.SetState(skillsTurnInitStateKey, true)
 
+	var beforeStateKeys []string
+	if skill.DebugSkillStateEnabled() {
+		beforeStateKeys = skill.DebugSkillStateKeys(
+			inv.Session.SnapshotState(),
+		)
+	}
 	delta := clearSkillState(inv)
+	if skill.DebugSkillStateEnabled() {
+		log.InfofContext(
+			ctx,
+			"skills-debug: turn_clear request_id=%s app=%s user=%s session=%s agent=%s invocation=%s cleared_keys=%v state_keys_before=%v state_keys_after=%v",
+			strings.TrimSpace(inv.RunOptions.RequestID),
+			inv.Session.AppName,
+			inv.Session.UserID,
+			inv.Session.ID,
+			inv.AgentName,
+			inv.InvocationID,
+			skill.DebugStateDeltaKeys(delta),
+			beforeStateKeys,
+			skill.DebugSkillStateKeys(inv.Session.SnapshotState()),
+		)
+	}
 	if len(delta) == 0 {
 		return
 	}
@@ -828,6 +865,32 @@ func (p *SkillsRequestProcessor) getLoadedSkills(
 		names = append(names, name)
 	}
 	return names
+}
+
+func (p *SkillsRequestProcessor) debugLogState(
+	ctx context.Context,
+	inv *agent.Invocation,
+	stage string,
+) {
+	if !skill.DebugSkillStateEnabled() || inv == nil || inv.Session == nil {
+		return
+	}
+	state := inv.Session.SnapshotState()
+	log.InfofContext(
+		ctx,
+		"skills-debug: process_request stage=%s request_id=%s app=%s user=%s session=%s agent=%s invocation=%s load_mode=%s tool_result_mode=%t loaded_skills=%v state_keys=%v",
+		stage,
+		strings.TrimSpace(inv.RunOptions.RequestID),
+		inv.Session.AppName,
+		inv.Session.UserID,
+		inv.Session.ID,
+		inv.AgentName,
+		inv.InvocationID,
+		p.loadMode,
+		p.toolResultMode,
+		skill.DebugLoadedSkills(state, inv.AgentName),
+		skill.DebugSkillStateKeys(state),
+	)
 }
 
 func (p *SkillsRequestProcessor) getDocsSelection(

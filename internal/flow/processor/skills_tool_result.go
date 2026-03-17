@@ -123,6 +123,15 @@ func (p *SkillsToolResultRequestProcessor) ProcessRequest(
 
 	loaded := p.getLoadedSkills(inv)
 	if len(loaded) == 0 {
+		p.debugLogToolResultDecision(
+			ctx,
+			inv,
+			nil,
+			nil,
+			nil,
+			"",
+			"remove:no_loaded_skills",
+		)
 		p.removeLoadedContextMessage(req)
 		return
 	}
@@ -160,12 +169,39 @@ func (p *SkillsToolResultRequestProcessor) ProcessRequest(
 		materialized,
 	)
 	if fallbackContent == "" {
+		p.debugLogToolResultDecision(
+			ctx,
+			inv,
+			loaded,
+			lastToolMsgIdx,
+			materialized,
+			fallbackContent,
+			"remove:no_fallback_content",
+		)
 		p.removeLoadedContextMessage(req)
 	} else if p.skipFallbackOnSessionSummary &&
 		hasSessionSummary(inv) &&
 		!hasCompactedToolResultMessages(inv) {
+		p.debugLogToolResultDecision(
+			ctx,
+			inv,
+			loaded,
+			lastToolMsgIdx,
+			materialized,
+			fallbackContent,
+			"remove:summary_skip",
+		)
 		p.removeLoadedContextMessage(req)
 	} else {
+		p.debugLogToolResultDecision(
+			ctx,
+			inv,
+			loaded,
+			lastToolMsgIdx,
+			materialized,
+			fallbackContent,
+			"upsert:fallback",
+		)
 		p.upsertLoadedContextMessage(req, fallbackContent)
 	}
 
@@ -401,6 +437,96 @@ func buildDocsText(sk *skill.Skill, wanted []string) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+func (p *SkillsToolResultRequestProcessor) debugLogToolResultDecision(
+	ctx context.Context,
+	inv *agent.Invocation,
+	loaded []string,
+	lastToolMsgIdx map[string]int,
+	materialized map[string]struct{},
+	fallbackContent string,
+	action string,
+) {
+	if !skill.DebugSkillStateEnabled() || inv == nil || inv.Session == nil {
+		return
+	}
+	state := inv.Session.SnapshotState()
+	log.InfofContext(
+		ctx,
+		"skills-debug: tool_result_process action=%s request_id=%s app=%s user=%s session=%s agent=%s invocation=%s load_mode=%s skip_fallback_on_summary=%t has_summary=%t has_compacted_tool_results=%t loaded_skills=%v tool_result_skills=%v materialized_skills=%v missing_skills=%v fallback_len=%d state_keys=%v",
+		action,
+		strings.TrimSpace(inv.RunOptions.RequestID),
+		inv.Session.AppName,
+		inv.Session.UserID,
+		inv.Session.ID,
+		inv.AgentName,
+		inv.InvocationID,
+		p.loadMode,
+		p.skipFallbackOnSessionSummary,
+		hasSessionSummary(inv),
+		hasCompactedToolResultMessages(inv),
+		append([]string(nil), loaded...),
+		sortedToolResultSkillNames(lastToolMsgIdx),
+		sortedMaterializedSkillNames(materialized),
+		missingLoadedSkills(loaded, materialized),
+		len(strings.TrimSpace(fallbackContent)),
+		skill.DebugSkillStateKeys(state),
+	)
+}
+
+func sortedToolResultSkillNames(lastToolMsgIdx map[string]int) []string {
+	if len(lastToolMsgIdx) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(lastToolMsgIdx))
+	for name := range lastToolMsgIdx {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sortedMaterializedSkillNames(materialized map[string]struct{}) []string {
+	if len(materialized) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(materialized))
+	for name := range materialized {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func missingLoadedSkills(
+	loaded []string,
+	materialized map[string]struct{},
+) []string {
+	if len(loaded) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(loaded))
+	for _, name := range loaded {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := materialized[name]; ok {
+			continue
+		}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (p *SkillsToolResultRequestProcessor) buildFallbackSystemContent(
