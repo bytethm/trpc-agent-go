@@ -610,6 +610,7 @@ func (s *Service) UpdateSessionState(ctx context.Context, key session.Key, state
 	if sessState.State == nil {
 		sessState.State = make(session.StateMap)
 	}
+	stateKeysBefore := stateMapKeys(sessState.State)
 	for k, v := range state {
 		if v == nil {
 			sessState.State[k] = nil
@@ -621,6 +622,20 @@ func (s *Service) UpdateSessionState(ctx context.Context, key session.Key, state
 	}
 	now := time.Now()
 	sessState.UpdatedAt = now
+	stateKeysAfter := stateMapKeys(sessState.State)
+
+	log.InfofContext(
+		ctx,
+		"mysql-session-debug: update_session_state_prepare app=%s user=%s session=%s updated_at=%s state_keys_before=%v patch_keys=%v patch_nil_keys=%v state_keys_after=%v",
+		key.AppName,
+		key.UserID,
+		key.SessionID,
+		sessState.UpdatedAt.Format(time.RFC3339Nano),
+		stateKeysBefore,
+		stateDeltaKeys(state, false),
+		stateDeltaKeys(state, true),
+		stateKeysAfter,
+	)
 
 	updatedStateBytes, err := json.Marshal(sessState)
 	if err != nil {
@@ -638,6 +653,16 @@ func (s *Service) UpdateSessionState(ctx context.Context, key session.Key, state
 	if err != nil {
 		return fmt.Errorf("mysql session service update session state failed: %w", err)
 	}
+
+	log.InfofContext(
+		ctx,
+		"mysql-session-debug: update_session_state_done app=%s user=%s session=%s updated_at=%s state_keys_after=%v",
+		key.AppName,
+		key.UserID,
+		key.SessionID,
+		sessState.UpdatedAt.Format(time.RFC3339Nano),
+		stateKeysAfter,
+	)
 
 	return nil
 }
@@ -706,6 +731,20 @@ func (s *Service) appendEventInternal(
 	// update user session with the given event
 	sess.UpdateUserSession(e, opts...)
 
+	log.InfofContext(
+		ctx,
+		"mysql-session-debug: append_event_internal app=%s user=%s session=%s event_id=%s object=%s async=%t sess_hash=%d state_delta_keys=%v state_delta_nil_keys=%v",
+		key.AppName,
+		key.UserID,
+		key.SessionID,
+		e.ID,
+		e.Object,
+		s.opts.enableAsyncPersist,
+		sess.Hash,
+		stateDeltaKeys(e.StateDelta, false),
+		stateDeltaKeys(e.StateDelta, true),
+	)
+
 	// persist event to MySQL asynchronously
 	if s.opts.enableAsyncPersist {
 		defer func() {
@@ -728,6 +767,17 @@ func (s *Service) appendEventInternal(
 		index := sess.Hash % len(s.eventPairChans)
 		select {
 		case s.eventPairChans[index] <- &sessionEventPair{key: key, event: e}:
+			log.InfofContext(
+				ctx,
+				"mysql-session-debug: append_event_queued app=%s user=%s session=%s event_id=%s object=%s worker=%d queue_len=%d",
+				key.AppName,
+				key.UserID,
+				key.SessionID,
+				e.ID,
+				e.Object,
+				index,
+				len(s.eventPairChans[index]),
+			)
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -760,6 +810,17 @@ func (s *Service) AppendTrackEvent(
 		return fmt.Errorf("mysql session service append track event failed: %w", err)
 	}
 
+	log.InfofContext(
+		ctx,
+		"mysql-session-debug: append_track_internal app=%s user=%s session=%s track=%s async=%t sess_hash=%d",
+		key.AppName,
+		key.UserID,
+		key.SessionID,
+		trackEvent.Track,
+		s.opts.enableAsyncPersist,
+		sess.Hash,
+	)
+
 	if s.opts.enableAsyncPersist {
 		defer func() {
 			if r := recover(); r != nil {
@@ -774,6 +835,16 @@ func (s *Service) AppendTrackEvent(
 		index := sess.Hash % len(s.trackEventChans)
 		select {
 		case s.trackEventChans[index] <- &trackEventPair{key: key, event: trackEvent}:
+			log.InfofContext(
+				ctx,
+				"mysql-session-debug: append_track_queued app=%s user=%s session=%s track=%s worker=%d queue_len=%d",
+				key.AppName,
+				key.UserID,
+				key.SessionID,
+				trackEvent.Track,
+				index,
+				len(s.trackEventChans[index]),
+			)
 		case <-ctx.Done():
 			return ctx.Err()
 		}

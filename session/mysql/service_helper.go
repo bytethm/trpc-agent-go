@@ -14,6 +14,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -46,20 +47,22 @@ func (s *Service) getSession(
 			return err
 		}
 		sessState = &SessionState{}
-		if err := json.Unmarshal(stateBytes, sessState); err != nil {
-			return fmt.Errorf("unmarshal session state failed: %w", err)
-		}
-		sessState.CreatedAt = createdAt
-		sessState.UpdatedAt = updatedAt
-		log.DebugfContext(
-			ctx,
-			"getSession found session state: app=%s, user=%s, session=%s",
-			key.AppName,
-			key.UserID,
-			key.SessionID,
-		)
-		return nil
-	}, stateQuery, stateArgs...)
+	if err := json.Unmarshal(stateBytes, sessState); err != nil {
+		return fmt.Errorf("unmarshal session state failed: %w", err)
+	}
+	sessState.CreatedAt = createdAt
+	sessState.UpdatedAt = updatedAt
+	log.InfofContext(
+		ctx,
+		"mysql-session-debug: get_session app=%s user=%s session=%s updated_at=%s state_keys=%v",
+		key.AppName,
+		key.UserID,
+		key.SessionID,
+		sessState.UpdatedAt.Format(time.RFC3339Nano),
+		stateMapKeys(sessState.State),
+	)
+	return nil
+}, stateQuery, stateArgs...)
 
 	if err != nil {
 		return nil, fmt.Errorf("get session state failed: %w", err)
@@ -289,7 +292,9 @@ func (s *Service) addEvent(ctx context.Context, key session.Key, event *event.Ev
 	if sessState.State == nil {
 		sessState.State = make(session.StateMap)
 	}
+	stateKeysBefore := stateMapKeys(sessState.State)
 	session.ApplyEventStateDeltaMap(sessState.State, event)
+	stateKeysAfter := stateMapKeys(sessState.State)
 	updatedStateBytes, err := json.Marshal(sessState)
 	if err != nil {
 		return fmt.Errorf("marshal session state failed: %w", err)
@@ -299,6 +304,20 @@ func (s *Service) addEvent(ctx context.Context, key session.Key, event *event.Ev
 	if err != nil {
 		return fmt.Errorf("marshal event failed: %w", err)
 	}
+
+	log.InfofContext(
+		ctx,
+		"mysql-session-debug: add_event_prepare app=%s user=%s session=%s object=%s updated_at=%s state_keys_before=%v state_delta_keys=%v state_delta_nil_keys=%v state_keys_after=%v",
+		key.AppName,
+		key.UserID,
+		key.SessionID,
+		event.Object,
+		sessState.UpdatedAt.Format(time.RFC3339Nano),
+		stateKeysBefore,
+		stateDeltaKeys(event.StateDelta, false),
+		stateDeltaKeys(event.StateDelta, true),
+		stateKeysAfter,
+	)
 
 	expiresAt := calculateExpiresAt(s.opts.sessionTTL)
 
@@ -330,6 +349,16 @@ func (s *Service) addEvent(ctx context.Context, key session.Key, event *event.Ev
 	if err != nil {
 		return fmt.Errorf("store event failed: %w", err)
 	}
+	log.InfofContext(
+		ctx,
+		"mysql-session-debug: add_event_done app=%s user=%s session=%s object=%s updated_at=%s state_keys_after=%v",
+		key.AppName,
+		key.UserID,
+		key.SessionID,
+		event.Object,
+		sessState.UpdatedAt.Format(time.RFC3339Nano),
+		stateKeysAfter,
+	)
 	return nil
 }
 
@@ -366,6 +395,7 @@ func (s *Service) addTrackEvent(ctx context.Context, key session.Key, trackEvent
 	}
 
 	// Update session state.
+	stateKeysBefore := stateMapKeys(sessState.State)
 	sess := &session.Session{
 		ID:      key.SessionID,
 		AppName: key.AppName,
@@ -377,6 +407,7 @@ func (s *Service) addTrackEvent(ctx context.Context, key session.Key, trackEvent
 	}
 	sessState.State = sess.SnapshotState()
 	sessState.UpdatedAt = sess.UpdatedAt
+	stateKeysAfter := stateMapKeys(sessState.State)
 
 	updatedStateBytes, err := json.Marshal(sessState)
 	if err != nil {
@@ -387,6 +418,18 @@ func (s *Service) addTrackEvent(ctx context.Context, key session.Key, trackEvent
 	if err != nil {
 		return fmt.Errorf("marshal track event failed: %w", err)
 	}
+
+	log.InfofContext(
+		ctx,
+		"mysql-session-debug: add_track_prepare app=%s user=%s session=%s track=%s updated_at=%s state_keys_before=%v state_keys_after=%v",
+		key.AppName,
+		key.UserID,
+		key.SessionID,
+		trackEvent.Track,
+		sessState.UpdatedAt.Format(time.RFC3339Nano),
+		stateKeysBefore,
+		stateKeysAfter,
+	)
 
 	expiresAt := calculateExpiresAt(s.opts.sessionTTL)
 
@@ -416,7 +459,47 @@ func (s *Service) addTrackEvent(ctx context.Context, key session.Key, trackEvent
 	if err != nil {
 		return fmt.Errorf("store track event failed: %w", err)
 	}
+	log.InfofContext(
+		ctx,
+		"mysql-session-debug: add_track_done app=%s user=%s session=%s track=%s updated_at=%s state_keys_after=%v",
+		key.AppName,
+		key.UserID,
+		key.SessionID,
+		trackEvent.Track,
+		sessState.UpdatedAt.Format(time.RFC3339Nano),
+		stateKeysAfter,
+	)
 	return nil
+}
+
+func stateMapKeys(state session.StateMap) []string {
+	if len(state) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(state))
+	for k := range state {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func stateDeltaKeys(delta map[string][]byte, nilOnly bool) []string {
+	if len(delta) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(delta))
+	for k, v := range delta {
+		if nilOnly && v != nil {
+			continue
+		}
+		if !nilOnly && v == nil {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // deleteSessionState deletes a session and its related data.
