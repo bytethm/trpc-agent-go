@@ -700,15 +700,47 @@ func (r *runner) processAgentEvents(
 // runEventLoop drives the main event processing loop for a single invocation.
 func (r *runner) runEventLoop(ctx context.Context, loop *eventLoopContext) {
 	defer func() {
+		requestID := ""
+		invocationID := ""
+		if loop != nil && loop.invocation != nil {
+			requestID = loop.invocation.RunOptions.RequestID
+			invocationID = loop.invocation.InvocationID
+		}
 		if rr := recover(); rr != nil {
 			log.Errorf("panic in runner event loop: %v\n%s", rr, string(debug.Stack()))
 		}
+		log.InfofContext(
+			ctx,
+			"runner event loop defer begin: request_id=%s invocation_id=%s ctx_err=%v processed_event_ch_len=%d processed_event_ch_cap=%d",
+			requestID,
+			invocationID,
+			ctx.Err(),
+			len(loop.processedEventCh),
+			cap(loop.processedEventCh),
+		)
 		// Agent event stream completed.
 		r.safeEmitRunnerCompletion(ctx, loop)
+		log.InfofContext(
+			ctx,
+			"runner event loop defer after completion emit: request_id=%s invocation_id=%s ctx_err=%v processed_event_ch_len=%d processed_event_ch_cap=%d",
+			requestID,
+			invocationID,
+			ctx.Err(),
+			len(loop.processedEventCh),
+			cap(loop.processedEventCh),
+		)
 		// Disable further flush requests for this invocation.
 		flush.Clear(loop.invocation)
 		appender.Clear(loop.invocation)
 		r.unregisterRun(loop.invocation.RunOptions.RequestID)
+		log.InfofContext(
+			ctx,
+			"runner event loop closing processed event channel: request_id=%s invocation_id=%s processed_event_ch_len=%d processed_event_ch_cap=%d",
+			requestID,
+			invocationID,
+			len(loop.processedEventCh),
+			cap(loop.processedEventCh),
+		)
 		close(loop.processedEventCh)
 		loop.invocation.CleanupNotice(ctx)
 		if loop.runHandle != nil {
@@ -719,6 +751,15 @@ func (r *runner) runEventLoop(ctx context.Context, loop *eventLoopContext) {
 		select {
 		case agentEvent, ok := <-loop.agentEventCh:
 			if !ok {
+				log.InfofContext(
+					ctx,
+					"runner event loop agent event channel closed: request_id=%s invocation_id=%s ctx_err=%v processed_event_ch_len=%d processed_event_ch_cap=%d",
+					loop.invocation.RunOptions.RequestID,
+					loop.invocation.InvocationID,
+					ctx.Err(),
+					len(loop.processedEventCh),
+					cap(loop.processedEventCh),
+				)
 				return
 			}
 			if err := r.processSingleAgentEvent(ctx, loop, agentEvent); err != nil {
@@ -740,6 +781,15 @@ func (r *runner) runEventLoop(ctx context.Context, loop *eventLoopContext) {
 				log.Errorf("handle flush request: %v", err)
 			}
 		case <-ctx.Done():
+			log.WarnfContext(
+				ctx,
+				"runner event loop context done: request_id=%s invocation_id=%s err=%v processed_event_ch_len=%d processed_event_ch_cap=%d",
+				loop.invocation.RunOptions.RequestID,
+				loop.invocation.InvocationID,
+				ctx.Err(),
+				len(loop.processedEventCh),
+				cap(loop.processedEventCh),
+			)
 			return
 		}
 	}
@@ -1037,13 +1087,82 @@ func (r *runner) emitRunnerCompletion(ctx context.Context, loop *eventLoopContex
 		)
 	}
 
+	requestID := loop.invocation.RunOptions.RequestID
+	invocationID := loop.invocation.InvocationID
+	log.InfofContext(
+		ctx,
+		"runner completion emit start: request_id=%s invocation_id=%s ctx_err=%v processed_event_ch_len=%d processed_event_ch_cap=%d final_state_delta=%d final_choices=%d",
+		requestID,
+		invocationID,
+		ctx.Err(),
+		len(loop.processedEventCh),
+		cap(loop.processedEventCh),
+		len(loop.finalStateDelta),
+		len(loop.finalChoices),
+	)
+
 	// Append runner completion event to session.
+	appendStart := time.Now()
+	log.InfofContext(
+		ctx,
+		"runner completion append begin: request_id=%s invocation_id=%s event_id=%s session_nil=%v",
+		requestID,
+		invocationID,
+		runnerCompletionEvent.ID,
+		loop.sess == nil,
+	)
 	if err := r.sessionService.AppendEvent(ctx, loop.sess, runnerCompletionEvent); err != nil {
 		log.Errorf("Failed to append runner completion event to session: %v", err)
+	} else {
+		log.InfofContext(
+			ctx,
+			"runner completion append done: request_id=%s invocation_id=%s event_id=%s cost_ms=%d ctx_err=%v",
+			requestID,
+			invocationID,
+			runnerCompletionEvent.ID,
+			time.Since(appendStart).Milliseconds(),
+			ctx.Err(),
+		)
 	}
 
 	// Send the runner completion event to output channel.
-	agent.EmitEvent(ctx, loop.invocation, loop.processedEventCh, runnerCompletionEvent)
+	log.InfofContext(
+		ctx,
+		"runner completion channel emit begin: request_id=%s invocation_id=%s event_id=%s processed_event_ch_len=%d processed_event_ch_cap=%d ctx_err=%v",
+		requestID,
+		invocationID,
+		runnerCompletionEvent.ID,
+		len(loop.processedEventCh),
+		cap(loop.processedEventCh),
+		ctx.Err(),
+	)
+	emitStart := time.Now()
+	if err := agent.EmitEvent(ctx, loop.invocation, loop.processedEventCh, runnerCompletionEvent); err != nil {
+		log.ErrorfContext(
+			ctx,
+			"runner completion channel emit failed: request_id=%s invocation_id=%s event_id=%s cost_ms=%d ctx_err=%v processed_event_ch_len=%d processed_event_ch_cap=%d err=%v",
+			requestID,
+			invocationID,
+			runnerCompletionEvent.ID,
+			time.Since(emitStart).Milliseconds(),
+			ctx.Err(),
+			len(loop.processedEventCh),
+			cap(loop.processedEventCh),
+			err,
+		)
+	} else {
+		log.InfofContext(
+			ctx,
+			"runner completion channel emit done: request_id=%s invocation_id=%s event_id=%s cost_ms=%d processed_event_ch_len=%d processed_event_ch_cap=%d ctx_err=%v",
+			requestID,
+			invocationID,
+			runnerCompletionEvent.ID,
+			time.Since(emitStart).Milliseconds(),
+			len(loop.processedEventCh),
+			cap(loop.processedEventCh),
+			ctx.Err(),
+		)
+	}
 
 	// Enqueue auto memory extraction job if memory service is configured.
 	r.enqueueAutoMemoryJob(ctx, loop.sess)

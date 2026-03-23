@@ -265,6 +265,11 @@ func EmitEvent(ctx context.Context, ch chan<- *Event, e *Event) error {
 	return EmitEventWithTimeout(ctx, ch, e, EmitWithoutTimeout)
 }
 
+func isRunnerCompletionEvent(e *Event) bool {
+	return e != nil && e.Response != nil &&
+		e.Done && e.Object == model.ObjectTypeRunnerCompletion
+}
+
 // EmitEventWithTimeout sends an event to the channel with optional timeout.
 func EmitEventWithTimeout(ctx context.Context, ch chan<- *Event,
 	e *Event, timeout time.Duration) error {
@@ -272,11 +277,37 @@ func EmitEventWithTimeout(ctx context.Context, ch chan<- *Event,
 		return nil
 	}
 
+	if isRunnerCompletionEvent(e) {
+		log.InfofContext(
+			ctx,
+			"runner completion channel send attempt: request_id=%s invocation_id=%s event_id=%s ctx_err=%v channel_len=%d channel_cap=%d timeout=%s",
+			e.RequestID,
+			e.InvocationID,
+			e.ID,
+			ctx.Err(),
+			len(ch),
+			cap(ch),
+			timeout,
+		)
+	}
+
 	// If the context is already cancelled, prefer returning immediately
 	// rather than attempting to send. This avoids a racy select where both
 	// the send and the ctx.Done() cases are ready, which could otherwise
 	// result in emitting an event after cancellation.
 	if err := ctx.Err(); err != nil {
+		if isRunnerCompletionEvent(e) {
+			log.WarnfContext(
+				ctx,
+				"runner completion channel send skipped due to context error: request_id=%s invocation_id=%s event_id=%s ctx_err=%v channel_len=%d channel_cap=%d",
+				e.RequestID,
+				e.InvocationID,
+				e.ID,
+				err,
+				len(ch),
+				cap(ch),
+			)
+		}
 		log.WarnfContext(
 			ctx,
 			"EmitEventWithTimeout: context error: %v, event: %+v",
@@ -292,9 +323,32 @@ func EmitEventWithTimeout(ctx context.Context, ch chan<- *Event,
 	if timeout == EmitWithoutTimeout {
 		select {
 		case ch <- e:
+			if isRunnerCompletionEvent(e) {
+				log.InfofContext(
+					ctx,
+					"runner completion channel send success: request_id=%s invocation_id=%s event_id=%s channel_len=%d channel_cap=%d",
+					e.RequestID,
+					e.InvocationID,
+					e.ID,
+					len(ch),
+					cap(ch),
+				)
+			}
 			log.TracefContext(ctx, "EmitEventWithTimeout: event sent, event: %+v", *e)
 		case <-ctx.Done():
 			err := ctx.Err()
+			if isRunnerCompletionEvent(e) {
+				log.WarnfContext(
+					ctx,
+					"runner completion channel send cancelled while waiting: request_id=%s invocation_id=%s event_id=%s ctx_err=%v channel_len=%d channel_cap=%d",
+					e.RequestID,
+					e.InvocationID,
+					e.ID,
+					err,
+					len(ch),
+					cap(ch),
+				)
+			}
 			log.WarnfContext(
 				ctx,
 				"EmitEventWithTimeout: context error: %v, event: %+v",
@@ -308,9 +362,32 @@ func EmitEventWithTimeout(ctx context.Context, ch chan<- *Event,
 
 	select {
 	case ch <- e:
+		if isRunnerCompletionEvent(e) {
+			log.InfofContext(
+				ctx,
+				"runner completion channel send success: request_id=%s invocation_id=%s event_id=%s channel_len=%d channel_cap=%d",
+				e.RequestID,
+				e.InvocationID,
+				e.ID,
+				len(ch),
+				cap(ch),
+			)
+		}
 		log.TracefContext(ctx, "EmitEventWithTimeout: event sent, event: %+v", *e)
 	case <-ctx.Done():
 		err := ctx.Err()
+		if isRunnerCompletionEvent(e) {
+			log.WarnfContext(
+				ctx,
+				"runner completion channel send cancelled while waiting: request_id=%s invocation_id=%s event_id=%s ctx_err=%v channel_len=%d channel_cap=%d",
+				e.RequestID,
+				e.InvocationID,
+				e.ID,
+				err,
+				len(ch),
+				cap(ch),
+			)
+		}
 		log.WarnfContext(
 			ctx,
 			"EmitEventWithTimeout: context error: %v, event: %+v",
@@ -319,6 +396,18 @@ func EmitEventWithTimeout(ctx context.Context, ch chan<- *Event,
 		)
 		return err
 	case <-time.After(timeout):
+		if isRunnerCompletionEvent(e) {
+			log.WarnfContext(
+				ctx,
+				"runner completion channel send timeout: request_id=%s invocation_id=%s event_id=%s channel_len=%d channel_cap=%d timeout=%s",
+				e.RequestID,
+				e.InvocationID,
+				e.ID,
+				len(ch),
+				cap(ch),
+				timeout,
+			)
+		}
 		log.WarnfContext(
 			ctx,
 			"EmitEventWithTimeout: timeout, event: %+v",
