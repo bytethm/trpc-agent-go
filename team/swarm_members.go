@@ -118,11 +118,13 @@ func (t *Team) updateSwarmMembersLocked(members []agent.Agent) error {
 		)
 	}
 
-	if err := wireSwarmRoster(members); err != nil {
+	swarmRoutes := newSwarmRoutes(t.name, members, t.swarm.HistoryScope)
+	if err := wireSwarmRoster(members, swarmRoutes); err != nil {
 		return err
 	}
 
 	t.members = members
 	t.memberByName = memberByName
+	t.swarmRoutes = swarmRoutes
 	return nil
 }

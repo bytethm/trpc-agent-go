@@ -373,6 +373,75 @@ if err := tm.UpdateSwarmMembers(members); err != nil {
 - 开启跨请求 transfer 后，如果 Session State 里记录的 active agent
   已被移除，则下一次运行会回退到入口成员。
 
+## Swarm 历史隔离（History Scope）
+
+默认情况下，Swarm 的所有成员共享同一份会话历史。也就是说，发生 handoff 之后，
+目标 Agent 会看到来源 Agent 说过的所有内容（以及用户说过的所有内容）。如果
+你希望每个成员只看到属于自己的上下文——或者只共享最初的用户问题、但不让兄弟
+Agent 的推理过程互相泄漏——请配置 `SwarmConfig.HistoryScope`。
+
+通过 `team.SwarmConfig.HistoryScope` 可选三种模式：
+
+### `team.SwarmHistoryScopeShared`（默认）
+
+- **作用**：所有成员共用同一个事件 filter key，handoff 之后每个成员都能
+  看到完整的 Swarm 历史。这是最早的「接力棒」式行为。
+- **适用**：简单链式 Swarm，成员之间上下文互相可见没问题，想要最短
+  上手路径。
+
+### `team.SwarmHistoryScopeRootAndAgent`
+
+- **作用**：每个成员运行在嵌套于 Swarm 入口 filter key 之下的独立 per-agent
+  filter key 上，形如 `{root}/__swarm__/{team}/{agent}`。在默认的前缀历史
+  过滤下，成员能看到共享的 root 上下文（通常就是用户的原始问题 + 顶层
+  invocation 的上下文）加上自己在历次 handoff 中积累的历史，但**看不到
+  兄弟成员的输出**。
+- **适用**：你希望 handoff 目标专注在任务本身，不被来源 Agent 的推理过程
+  干扰，同时仍保留用户原始请求作为上下文。对大多数非平凡 Swarm，这是一个
+  不错的默认值。
+
+### `team.SwarmHistoryScopeAgentOnly`
+
+- **作用**：每个成员拥有一个稳定的独立 filter key，**不嵌套在** Swarm root 之下，
+  形如 `__swarm_agent__::{team}::{agent}`。成员跨 handoff、跨请求都能
+  保留自己的历史，但**不继承任何共享的 root 历史**（包括最初的用户输入）。
+- **适用**：需要强隔离的 per-agent 记忆——比如成员是「专家」角色，只应当
+  从自己见过的内容里作答。
+- **注意**：在 AgentOnly 下，handoff 目标唯一保证能看到的消息，就是当前
+  invocation 的输入消息——也就是来源 Agent 在 `transfer_to_agent` 里
+  传入的 `message` 参数（如果有的话）；如果来源没传，目标会继承来源
+  invocation 的 Message，可能是更早的用户消息或更早的 transfer
+  message。因此在这个 scope 下，**来源 Agent 必须主动提供一条
+  自包含的 transfer message**，否则目标不知道自己要干什么。
+
+### 用法
+
+```go
+cfg := team.DefaultSwarmConfig()
+cfg.HistoryScope = team.SwarmHistoryScopeRootAndAgent
+
+tm, err := team.NewSwarm(
+    "team",
+    "researcher",
+    members,
+    team.WithSwarmConfig(cfg),
+)
+```
+
+### 注意事项
+
+- `HistoryScope` 只管 Swarm 在入口和 transfer 边界上如何派生 filter key，
+  不会覆盖成员自身的 timeline 过滤配置。如果某个成员显式设置了
+  `llmagent.WithMessageFilterMode(llmagent.IsolatedInvocation)`，它的
+  timeline 过滤仍然会叠加生效，甚至可能进一步裁掉该成员自己的历史轮次。
+- 这里的「root」是 Swarm **进入时**观察到的外层 filter key，不是全局会话根。
+  如果 Swarm 没有被嵌套，root 就是 runner 设置的 session 级 filter key
+  （默认即应用名）。如果 Swarm 被嵌套在其他 agent 里（Coordinator、
+  AgentTool、或另一个 Swarm），`RootAndAgent` 的共享上下文就限定在这
+  外层分支之内；`AgentOnly` 则完全忽略外层 key。
+- Session 摘要按成员 filter key 分别归属。Swarm 不维护跨成员的 Team 级
+  共享摘要。
+
 ## Swarm 的安全限制
 
 Swarm 的 handoff（交接）如果不加限制，可能会出现来回 transfer 的循环。

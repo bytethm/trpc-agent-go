@@ -35,6 +35,7 @@ type mockAgent struct {
 	name             string
 	emit             bool
 	gotEndInvocation bool
+	gotFilterKey     string
 	gotTraceNodeID   string
 	gotSurfaceRoot   string
 }
@@ -49,6 +50,7 @@ func (m *mockAgent) Run(ctx context.Context, inv *agent.Invocation) (<-chan *eve
 		defer close(ch)
 		// Record whether the invocation was incorrectly marked as ended.
 		m.gotEndInvocation = inv.EndInvocation
+		m.gotFilterKey = inv.GetEventFilterKey()
 		m.gotTraceNodeID = agent.InvocationTraceNodeID(inv)
 		m.gotSurfaceRoot = agent.InvocationSurfaceRootNodeID(inv)
 		if m.emit {
@@ -56,6 +58,15 @@ func (m *mockAgent) Run(ctx context.Context, inv *agent.Invocation) (<-chan *eve
 		}
 	}()
 	return ch, nil
+}
+
+type preparingAgent struct {
+	*mockAgent
+	filterKey string
+}
+
+func (p *preparingAgent) PrepareInvocation(inv *agent.Invocation) {
+	agent.WithInvocationEventFilterKey(p.filterKey)(inv)
 }
 
 // parentAgent implements FindSubAgent
@@ -490,6 +501,50 @@ func TestTransferResponseProc_SetsTransferTags(t *testing.T) {
 	}
 
 	require.GreaterOrEqual(t, transferTagCount, 2)
+}
+
+func TestTransferResponseProc_PreparesTargetInvocationBeforeTransferEcho(t *testing.T) {
+	target := &preparingAgent{
+		mockAgent: &mockAgent{name: "child", emit: true},
+		filterKey: "app/__swarm__/team/child",
+	}
+	parent := &parentAgent{child: target}
+
+	inv := agent.NewInvocation(
+		agent.WithInvocationAgent(parent),
+		agent.WithInvocationID("inv-prepare"),
+		agent.WithInvocationEventFilterKey("app"),
+		agent.WithInvocationTransferInfo(&agent.TransferInfo{
+			TargetAgentName: "child",
+			Message:         "handoff",
+		}),
+	)
+	rsp := &model.Response{ID: "r-prepare", Created: time.Now().Unix(), Model: "m"}
+
+	out := make(chan *event.Event, 10)
+	NewTransferResponseProcessor(true).ProcessResponse(
+		context.Background(),
+		inv,
+		&model.Request{},
+		rsp,
+		out,
+	)
+	close(out)
+
+	var echoEvent *event.Event
+	for evt := range out {
+		if evt == nil || evt.Author != "child" || evt.Tag != event.TransferTag {
+			continue
+		}
+		if len(evt.Choices) == 0 || evt.Choices[0].Message.Content != "handoff" {
+			continue
+		}
+		echoEvent = evt
+	}
+
+	require.NotNil(t, echoEvent)
+	require.Equal(t, target.filterKey, echoEvent.FilterKey)
+	require.Equal(t, target.filterKey, target.gotFilterKey)
 }
 
 type doneResponseAgent struct {

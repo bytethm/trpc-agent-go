@@ -41,6 +41,7 @@ type Team struct {
 
 	members      []agent.Agent
 	memberByName map[string]agent.Agent
+	swarmRoutes  map[string]agent.Agent
 
 	memberToolSet        tool.ToolSet
 	swarm                SwarmConfig
@@ -161,7 +162,8 @@ func NewSwarm(
 		return nil, fmt.Errorf("entry member %q not found", entryName)
 	}
 
-	if err := wireSwarmRoster(members); err != nil {
+	swarmRoutes := newSwarmRoutes(name, members, cfg.swarm.HistoryScope)
+	if err := wireSwarmRoster(members, swarmRoutes); err != nil {
 		return nil, err
 	}
 
@@ -172,6 +174,7 @@ func NewSwarm(
 		entryName:            entryName,
 		members:              members,
 		memberByName:         memberByName,
+		swarmRoutes:          swarmRoutes,
 		swarm:                cfg.swarm,
 		crossRequestTransfer: cfg.crossRequestTransfer,
 	}, nil
@@ -264,7 +267,7 @@ func (t *Team) runSwarm(
 	// fall back to entry member.
 	if startAgent == nil {
 		t.mu.RLock()
-		startAgent = t.memberByName[t.entryName]
+		startAgent = t.swarmRoutes[t.entryName]
 		t.mu.RUnlock()
 		if startAgent == nil {
 			return nil, fmt.Errorf("entry member %q not found", t.entryName)
@@ -272,6 +275,7 @@ func (t *Team) runSwarm(
 	}
 
 	ensureSwarmRuntime(invocation, t.swarm)
+	ensureSwarmHistoryRoot(invocation)
 	memberPathAllocator := istructure.NewPathAllocator(traceRootNodeID)
 	var memberNodeID string
 	startAgentName := startAgent.Info().Name
@@ -299,6 +303,7 @@ func (t *Team) runSwarm(
 			agent.SetInvocationSurfaceRootNodeID(inv, memberSurfaceRootNodeID)
 		},
 	)
+	agent.PrepareInvocationForAgent(startAgent, child)
 	childCtx := agent.NewInvocationContext(ctx, child)
 
 	return startAgent.Run(childCtx, child)
@@ -319,9 +324,9 @@ func (t *Team) getActiveAgent(invocation *agent.Invocation) agent.Agent {
 
 	activeAgentName := string(agentNameBytes)
 
-	// Look up the agent in memberByName.
+	// Look up the runtime route for the active agent.
 	t.mu.RLock()
-	ag := t.memberByName[activeAgentName]
+	ag := t.swarmRoutes[activeAgentName]
 	t.mu.RUnlock()
 	if ag == nil {
 		// Active agent doesn't exist, return nil to fall back to entry member.
@@ -460,7 +465,10 @@ func (s *staticToolSet) Close() error { return nil }
 
 func (s *staticToolSet) Name() string { return s.name }
 
-func wireSwarmRoster(members []agent.Agent) error {
+func wireSwarmRoster(
+	members []agent.Agent,
+	routes map[string]agent.Agent,
+) error {
 	setters := make([]agent.SubAgentSetter, 0, len(members))
 	for _, m := range members {
 		setter, ok := m.(agent.SubAgentSetter)
@@ -479,7 +487,11 @@ func wireSwarmRoster(members []agent.Agent) error {
 			if other == nil || i == j {
 				continue
 			}
-			roster = append(roster, other)
+			route := routes[other.Info().Name]
+			if route == nil {
+				route = other
+			}
+			roster = append(roster, route)
 		}
 		setters[i].SetSubAgents(roster)
 	}

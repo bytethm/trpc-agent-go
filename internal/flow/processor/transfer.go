@@ -168,6 +168,7 @@ func (p *TransferResponseProcessor) ProcessResponse(
 			}
 		},
 	)
+	agent.PrepareInvocationForAgent(targetAgent, targetInvocation)
 
 	// Set the message for the target agent.
 	if transferInfo.Message != "" {

@@ -132,6 +132,7 @@ type testSwarmMember struct {
 	name string
 
 	gotRuntime           bool
+	gotFilterKey         string
 	gotTraceNodeID       string
 	gotSurfaceRootNodeID string
 	subAgents            []agent.Agent
@@ -146,6 +147,9 @@ func (t *testSwarmMember) Run(
 	ctx context.Context,
 	inv *agent.Invocation,
 ) (<-chan *event.Event, error) {
+	if inv != nil {
+		t.gotFilterKey = inv.GetEventFilterKey()
+	}
 	t.gotTraceNodeID = agent.InvocationTraceNodeID(inv)
 	t.gotSurfaceRootNodeID = agent.InvocationSurfaceRootNodeID(inv)
 	if inv != nil && inv.RunOptions.RuntimeState != nil {
@@ -1001,6 +1005,165 @@ func TestTeam_RunSwarm_MountsMemberTraceNodeID(t *testing.T) {
 	require.Empty(t, b.gotTraceNodeID)
 }
 
+func TestTeam_RunSwarm_HistoryScopeShared_PreservesRootFilterKey(t *testing.T) {
+	a := &testSwarmMember{name: testMemberNameOne}
+	b := &testSwarmMember{name: testMemberNameTwo}
+
+	tm, err := NewSwarm(
+		testTeamName,
+		testEntryName,
+		[]agent.Agent{a, b},
+	)
+	require.NoError(t, err)
+
+	inv := agent.NewInvocation(
+		agent.WithInvocationAgent(tm),
+		agent.WithInvocationEventFilterKey("app"),
+		agent.WithInvocationMessage(model.NewUserMessage(testUserMessage)),
+	)
+	ctx := agent.NewInvocationContext(context.Background(), inv)
+	ch, err := tm.Run(ctx, inv)
+	require.NoError(t, err)
+	for range ch {
+	}
+
+	require.Equal(t, "app", a.gotFilterKey)
+}
+
+func TestTeam_RunSwarm_HistoryScopeRootAndAgent_DerivesStableFilterKey(t *testing.T) {
+	a := &testSwarmMember{name: testMemberNameOne}
+	b := &testSwarmMember{name: testMemberNameTwo}
+	cfg := DefaultSwarmConfig()
+	cfg.HistoryScope = SwarmHistoryScopeRootAndAgent
+
+	tm, err := NewSwarm(
+		testTeamName,
+		testEntryName,
+		[]agent.Agent{a, b},
+		WithSwarmConfig(cfg),
+	)
+	require.NoError(t, err)
+
+	inv := agent.NewInvocation(
+		agent.WithInvocationAgent(tm),
+		agent.WithInvocationEventFilterKey("app"),
+		agent.WithInvocationMessage(model.NewUserMessage(testUserMessage)),
+	)
+	ctx := agent.NewInvocationContext(context.Background(), inv)
+	ch, err := tm.Run(ctx, inv)
+	require.NoError(t, err)
+	for range ch {
+	}
+
+	require.Equal(
+		t,
+		joinFilterKey(
+			"app",
+			swarmHistoryFilterMarker,
+			testTeamName,
+			testMemberNameOne,
+		),
+		a.gotFilterKey,
+	)
+}
+
+// TestTeam_RunSwarm_HistoryScopeRootAndAgent_NestedFilterKey verifies the
+// "root" under SwarmHistoryScopeRootAndAgent is the enclosing filter key
+// observed at Swarm entry — NOT a global session root. The test simulates
+// a deeply nested context by feeding a multi-segment filter key
+// ("outer/middle/coord") into the Swarm and confirms the derived member
+// key carries the full enclosing prefix.
+//
+// This backs the doc claim on SwarmHistoryScopeRootAndAgent that nested
+// topologies (Coordinator / AgentTool / nested Swarm) scope "shared
+// context" to the enclosing agent's branch rather than the session root.
+func TestTeam_RunSwarm_HistoryScopeRootAndAgent_NestedFilterKey(t *testing.T) {
+	const enclosingKey = "outer/middle/coord"
+
+	a := &testSwarmMember{name: testMemberNameOne}
+	b := &testSwarmMember{name: testMemberNameTwo}
+	cfg := DefaultSwarmConfig()
+	cfg.HistoryScope = SwarmHistoryScopeRootAndAgent
+
+	tm, err := NewSwarm(
+		testTeamName,
+		testEntryName,
+		[]agent.Agent{a, b},
+		WithSwarmConfig(cfg),
+	)
+	require.NoError(t, err)
+
+	inv := agent.NewInvocation(
+		agent.WithInvocationAgent(tm),
+		agent.WithInvocationEventFilterKey(enclosingKey),
+		agent.WithInvocationMessage(model.NewUserMessage(testUserMessage)),
+	)
+	ctx := agent.NewInvocationContext(context.Background(), inv)
+	ch, err := tm.Run(ctx, inv)
+	require.NoError(t, err)
+	for range ch {
+	}
+
+	require.Equal(
+		t,
+		joinFilterKey(
+			enclosingKey,
+			swarmHistoryFilterMarker,
+			testTeamName,
+			testMemberNameOne,
+		),
+		a.gotFilterKey,
+		"RootAndAgent nested: member key must be prefixed by the enclosing filter key observed at entry",
+	)
+}
+
+// TestTeam_RunSwarm_HistoryScopeAgentOnly_NestedIgnoresEnclosingFilterKey
+// verifies the complementary P2 claim: SwarmHistoryScopeAgentOnly
+// deliberately discards the enclosing filter key at Swarm entry and gives
+// each member a stable standalone key. The member key must NOT carry the
+// enclosing prefix.
+func TestTeam_RunSwarm_HistoryScopeAgentOnly_NestedIgnoresEnclosingFilterKey(t *testing.T) {
+	const enclosingKey = "outer/middle/coord"
+
+	a := &testSwarmMember{name: testMemberNameOne}
+	b := &testSwarmMember{name: testMemberNameTwo}
+	cfg := DefaultSwarmConfig()
+	cfg.HistoryScope = SwarmHistoryScopeAgentOnly
+
+	tm, err := NewSwarm(
+		testTeamName,
+		testEntryName,
+		[]agent.Agent{a, b},
+		WithSwarmConfig(cfg),
+	)
+	require.NoError(t, err)
+
+	inv := agent.NewInvocation(
+		agent.WithInvocationAgent(tm),
+		agent.WithInvocationEventFilterKey(enclosingKey),
+		agent.WithInvocationMessage(model.NewUserMessage(testUserMessage)),
+	)
+	ctx := agent.NewInvocationContext(context.Background(), inv)
+	ch, err := tm.Run(ctx, inv)
+	require.NoError(t, err)
+	for range ch {
+	}
+
+	wantKey := swarmAgentOnlyFilterPrefix + "::" + testTeamName + "::" + testMemberNameOne
+	require.Equal(
+		t,
+		wantKey,
+		a.gotFilterKey,
+		"AgentOnly nested: member key must be standalone and NOT inherit the enclosing filter key",
+	)
+	require.NotContains(
+		t,
+		a.gotFilterKey,
+		enclosingKey,
+		"AgentOnly nested: enclosing key must not leak into the member key",
+	)
+}
+
 func TestTeam_RunSwarm_PreservesTraceNodeIDWhenSurfaceRootIsMounted(t *testing.T) {
 	a := &testSwarmMember{name: testMemberNameOne}
 	b := &testSwarmMember{name: testMemberNameTwo}
@@ -1070,6 +1233,43 @@ func TestTeam_RunSwarm_CrossRequestTransfer_UsesActiveAgent(t *testing.T) {
 	teamNameBytes, ok := sess.GetState(SwarmTeamNameKey)
 	require.True(t, ok)
 	require.Equal(t, []byte(testTeamName), teamNameBytes)
+}
+
+func TestTeam_RunSwarm_CrossRequestTransfer_AgentOnlyHistoryScope_UsesStableAgentKey(t *testing.T) {
+	a := &testSwarmMember{name: testMemberNameOne}
+	b := &testSwarmMember{name: testMemberNameTwo}
+	cfg := DefaultSwarmConfig()
+	cfg.HistoryScope = SwarmHistoryScopeAgentOnly
+
+	tm, err := NewSwarm(
+		testTeamName,
+		testEntryName,
+		[]agent.Agent{a, b},
+		WithSwarmConfig(cfg),
+		WithCrossRequestTransfer(true),
+	)
+	require.NoError(t, err)
+
+	sess := session.NewSession(testAppName, testUserID, testSessionID)
+	sess.SetState(SwarmActiveAgentKeyPrefix+testTeamName, []byte(testMemberNameTwo))
+
+	inv := agent.NewInvocation(
+		agent.WithInvocationAgent(tm),
+		agent.WithInvocationEventFilterKey("app"),
+		agent.WithInvocationSession(sess),
+		agent.WithInvocationMessage(model.NewUserMessage(testUserMessage)),
+	)
+	ctx := agent.NewInvocationContext(context.Background(), inv)
+	ch, err := tm.Run(ctx, inv)
+	require.NoError(t, err)
+	for range ch {
+	}
+
+	require.Equal(
+		t,
+		swarmAgentOnlyFilterPrefix+"::"+testTeamName+"::"+testMemberNameTwo,
+		b.gotFilterKey,
+	)
 }
 
 func TestTeam_RunSwarm_CrossRequestTransfer_StoresMountedTraceRoot(t *testing.T) {

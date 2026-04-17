@@ -394,6 +394,83 @@ Notes:
 - With cross-request transfer enabled, if session state points to a removed
   active Agent, the next run falls back to the entry member.
 
+## Swarm History Scope
+
+By default, every Swarm member shares the same conversation history, so after
+a handoff the target Agent can see everything the source said (and everything
+the user said). If you want each member to have its own view — or only share
+the originating user request without leaking sibling reasoning — configure
+`SwarmConfig.HistoryScope`.
+
+There are three modes, set via `team.SwarmConfig.HistoryScope`:
+
+### `team.SwarmHistoryScopeShared` (default)
+
+- **What it does**: all members share the same event filter key, so every
+  member sees the same Swarm history across handoffs. This is the legacy
+  baton-passing behavior.
+- **Use it when**: simple chains where context bleed between members is fine
+  and you want the shortest path to working.
+
+### `team.SwarmHistoryScopeRootAndAgent`
+
+- **What it does**: each member runs under a per-agent filter key nested
+  under the Swarm's entry filter key, i.e. `{root}/__swarm__/{team}/{agent}`.
+  With prefix-based history filtering, a member sees the shared root context
+  (typically the user's question and top-level invocation) plus its own
+  prior history across handoffs — but not sibling members' output.
+- **Use it when**: you want handoff targets to stay focused on the task
+  (not distracted by how the source reasoned about it), while still having
+  the originating user request in context. A good default for most
+  non-trivial Swarms.
+
+### `team.SwarmHistoryScopeAgentOnly`
+
+- **What it does**: each member has a stable standalone filter key that is
+  not nested under the Swarm root, i.e. `__swarm_agent__::{team}::{agent}`.
+  The member keeps its own prior turns across handoffs and across requests,
+  but does not inherit any shared root history (including the originating
+  user turn).
+- **Use it when**: you want strong per-agent isolation and persistent
+  per-agent memory — for example, when members are "specialists" that
+  should answer only from what they themselves previously saw.
+- **Caveat**: under AgentOnly, the only message guaranteed to reach a
+  handoff target is the current invocation's input — which is the `message`
+  argument of `transfer_to_agent` if the source supplied one, or the
+  inherited source invocation message if it did not. Always supply a
+  self-contained transfer message under this scope so the target knows
+  what to do.
+
+### Configuring
+
+```go
+cfg := team.DefaultSwarmConfig()
+cfg.HistoryScope = team.SwarmHistoryScopeRootAndAgent
+
+tm, err := team.NewSwarm(
+    "team",
+    "researcher",
+    members,
+    team.WithSwarmConfig(cfg),
+)
+```
+
+### Notes
+
+- `HistoryScope` shapes how Swarm derives filter keys at entry and transfer
+  boundaries. It does not override per-agent timeline filters. If a member
+  explicitly sets `llmagent.WithMessageFilterMode(llmagent.IsolatedInvocation)`,
+  that timeline filter still applies on top and may further restrict what
+  the member sees — including its own prior turns within a single run.
+- "Root" here is the Swarm's enclosing filter key observed at entry, not a
+  global session root. When the Swarm is not nested, the root equals the
+  session-level filter key set by the runner (the application name by
+  default). When the Swarm is nested inside another agent (Coordinator,
+  AgentTool, or another Swarm), `RootAndAgent` scopes shared context to
+  that enclosing branch; `AgentOnly` ignores it entirely.
+- Session summaries are scoped per-member filter key. There is no
+  Team-level shared summary across members.
+
 ## Swarm Guardrails
 
 Swarm-style handoffs can loop if Agents keep transferring back and forth.
