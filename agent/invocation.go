@@ -338,6 +338,15 @@ func WithInjectedContextMessages(messages []model.Message) RunOption {
 	}
 }
 
+// WithLateContextMessages appends per-run messages that are injected into the
+// model request near the latest user turn but are not persisted into the session
+// transcript.
+func WithLateContextMessages(messages []model.Message) RunOption {
+	return func(opts *RunOptions) {
+		opts.LateContextMessages = append(opts.LateContextMessages, messages...)
+	}
+}
+
 // WithResume enables or disables resume mode for this run.
 // When enabled, flows like llmflow may inspect the existing Session history
 // and resume unfinished work (for example, executing pending tool calls)
@@ -851,6 +860,11 @@ type RunOptions struct {
 	// into the model request for this run. These messages are not persisted into
 	// session events and therefore must be provided on every run if needed.
 	InjectedContextMessages []model.Message
+
+	// LateContextMessages allows callers to inject additional context messages
+	// near the latest user turn for this run. These messages are not persisted
+	// into session events and therefore must be provided on every run if needed.
+	LateContextMessages []model.Message
 
 	// Resume indicates whether this run should attempt to resume from existing
 	// session context before making a new model call. When true, flows may

@@ -1082,3 +1082,18 @@ func TestWithInjectedContextMessages(t *testing.T) {
 		{Role: model.RoleAssistant, Content: "Hello"},
 	}, opts.InjectedContextMessages)
 }
+
+func TestWithLateContextMessages(t *testing.T) {
+	opts := &RunOptions{}
+	WithLateContextMessages([]model.Message{
+		{Role: model.RoleUser, Content: "Rules A"},
+	})(opts)
+	WithLateContextMessages([]model.Message{
+		{Role: model.RoleUser, Content: "Rules B"},
+	})(opts)
+
+	require.Equal(t, []model.Message{
+		{Role: model.RoleUser, Content: "Rules A"},
+		{Role: model.RoleUser, Content: "Rules B"},
+	}, opts.LateContextMessages)
+}
