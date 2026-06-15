@@ -5525,7 +5525,7 @@ func TestTool_WithPinModel_ClearsModelName(t *testing.T) {
 		}),
 	)
 
-	opts := agentTool.childInvocationOptions(parentInv, model.NewUserMessage("test"), "child-key", nil)
+	opts := agentTool.childInvocationOptions(context.Background(), parentInv, model.NewUserMessage("test"), "child-key", nil)
 
 	// Apply options to a new invocation to verify ModelName is cleared
 	childInv := parentInv.Clone(opts...)
@@ -5550,7 +5550,7 @@ func TestTool_WithPinModel_ClearsModel(t *testing.T) {
 		}),
 	)
 
-	opts := agentTool.childInvocationOptions(parentInv, model.NewUserMessage("test"), "child-key", nil)
+	opts := agentTool.childInvocationOptions(context.Background(), parentInv, model.NewUserMessage("test"), "child-key", nil)
 
 	childInv := parentInv.Clone(opts...)
 	if childInv.RunOptions.Model != nil {
@@ -5574,7 +5574,7 @@ func TestTool_WithPinModel_ClearsModelSelector(t *testing.T) {
 		}),
 	)
 
-	opts := agentTool.childInvocationOptions(parentInv, model.NewUserMessage("test"), "child-key", nil)
+	opts := agentTool.childInvocationOptions(context.Background(), parentInv, model.NewUserMessage("test"), "child-key", nil)
 
 	childInv := parentInv.Clone(opts...)
 	if childInv.RunOptions.ModelSelector != nil {
@@ -5601,7 +5601,7 @@ func TestTool_WithPinModel_Disabled_PreservesModelName(t *testing.T) {
 		}),
 	)
 
-	opts := agentTool.childInvocationOptions(parentInv, model.NewUserMessage("test"), "child-key", nil)
+	opts := agentTool.childInvocationOptions(context.Background(), parentInv, model.NewUserMessage("test"), "child-key", nil)
 
 	childInv := parentInv.Clone(opts...)
 	if childInv.RunOptions.ModelName != "parent-model" {

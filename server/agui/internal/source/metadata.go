@@ -29,7 +29,11 @@ type Metadata struct {
 	Author             string `json:"author,omitempty"`
 	InvocationID       string `json:"invocationId,omitempty"`
 	ParentInvocationID string `json:"parentInvocationId,omitempty"`
-	Branch             string `json:"branch,omitempty"`
+	// ParentMetadata describes how the invocation was triggered by its
+	// parent (e.g., AgentTool call, transfer). Use ParentMetadata.TriggerID
+	// to correlate this event with the parent's TOOL_CALL_START.
+	ParentMetadata *agentevent.ParentInvocationMetadata `json:"parentMetadata,omitempty"`
+	Branch         string                               `json:"branch,omitempty"`
 }
 
 // SnapshotMetadata indexes source metadata for messages snapshot payloads.
@@ -64,6 +68,7 @@ func FromEvent(ev *agentevent.Event) (Metadata, bool) {
 		Author:             ev.Author,
 		InvocationID:       ev.InvocationID,
 		ParentInvocationID: ev.ParentInvocationID,
+		ParentMetadata:     ev.ParentMetadata,
 		Branch:             ev.Branch,
 	}
 	return metadata, !metadata.IsZero()
@@ -107,6 +112,13 @@ func FromRawEvent(raw any) (Metadata, bool) {
 			InvocationID:       stringFromMap(v, "invocationId"),
 			ParentInvocationID: stringFromMap(v, "parentInvocationId"),
 			Branch:             stringFromMap(v, "branch"),
+		}
+		if pm, ok := v["parentMetadata"].(map[string]any); ok {
+			metadata.ParentMetadata = &agentevent.ParentInvocationMetadata{
+				TriggerType: stringFromMap(pm, "triggerType"),
+				TriggerID:   stringFromMap(pm, "triggerId"),
+				TriggerName: stringFromMap(pm, "triggerName"),
+			}
 		}
 		return metadata, !metadata.IsZero()
 	default:

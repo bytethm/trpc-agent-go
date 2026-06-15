@@ -489,7 +489,7 @@ func (at *Tool) callWithParentInvocation(
 			message = model.Message{}
 		}
 	}
-	subInv := parentInv.Clone(at.childInvocationOptions(parentInv, message, childKey, runtimeState)...)
+	subInv := parentInv.Clone(at.childInvocationOptions(ctx, parentInv, message, childKey, runtimeState)...)
 
 	// Run the agent and collect response.
 	subCtx := agent.NewInvocationContext(ctx, subInv)
@@ -550,6 +550,7 @@ func (at *Tool) surfaceRootNodeIDForParentInvocation(
 }
 
 func (at *Tool) childInvocationOptions(
+	ctx context.Context,
 	parentInv *agent.Invocation,
 	message model.Message,
 	childKey string,
@@ -559,6 +560,19 @@ func (at *Tool) childInvocationOptions(
 		agent.WithInvocationAgent(at.agent),
 		agent.WithInvocationMessage(message),
 		agent.WithInvocationEventFilterKey(childKey),
+	}
+	// Carry parent metadata so sub-agent events can be correlated with the
+	// specific parent tool call that spawned them. Critical for parallel
+	// AgentTool calls to the same sub-agent: parentInvocationId alone cannot
+	// disambiguate parallel branches; ParentMetadata.TriggerID can.
+	if toolCallID, ok := tool.ToolCallIDFromContext(ctx); ok && toolCallID != "" {
+		invocationOpts = append(invocationOpts, agent.WithInvocationParentMetadata(
+			&agent.ParentInvocationMetadata{
+				TriggerType: agent.TriggerTypeToolCall,
+				TriggerID:   toolCallID,
+				TriggerName: at.name,
+			},
+		))
 	}
 	if runtimeState != nil {
 		invocationOpts = append(invocationOpts, func(inv *agent.Invocation) {
@@ -714,6 +728,9 @@ func ensureInvocationEventFields(inv *agent.Invocation, evt *event.Event) {
 		if parent := inv.GetParentInvocation(); parent != nil {
 			evt.ParentInvocationID = parent.InvocationID
 		}
+	}
+	if evt.ParentMetadata == nil && inv.ParentMetadata != nil {
+		evt.ParentMetadata = inv.ParentMetadata
 	}
 	if evt.Branch == "" {
 		evt.Branch = inv.Branch
@@ -1274,7 +1291,7 @@ func (at *Tool) streamFromParentInvocation(
 	// forever.
 	parentInv = parentInvocationWithLiveSession(parentInv)
 	childKey := at.buildChildFilterKey(ctx, parentInv, []byte(message.Content))
-	subInv := parentInv.Clone(at.childInvocationOptions(parentInv, message, childKey, nil)...)
+	subInv := parentInv.Clone(at.childInvocationOptions(ctx, parentInv, message, childKey, nil)...)
 	subCtx := agent.NewInvocationContext(ctx, subInv)
 	evCh, err := agent.RunWithPlugins(subCtx, subInv, at.agent)
 	if err != nil {
